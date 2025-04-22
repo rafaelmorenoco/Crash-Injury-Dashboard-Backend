@@ -1,0 +1,46 @@
+# .github/workflows/daily-screenshot.yml
+name: Daily Website Screenshot
+
+on:
+  schedule:
+    # Run daily at 8:00 AM EST (Daylight Savings)
+    - cron: '0 12 * * *'
+  # Allow manual triggering for testing
+  workflow_dispatch:
+
+jobs:
+  screenshot-and-email:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+      
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
+        
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install playwright
+          python -m playwright install chromium
+        
+      - name: Run screenshot script
+        env:
+          WEBSITE_URL: ${{ secrets.WEBSITE_URL }}
+          WEBSITE_URL_2: ${{ secrets.WEBSITE_URL_2 }}
+          GMAIL_ADDRESS: ${{ secrets.GMAIL_ADDRESS }}
+          GMAIL_APP_PASSWORD: ${{ secrets.GMAIL_APP_PASSWORD }}
+          RECIPIENT_EMAIL: ${{ secrets.RECIPIENT_EMAIL }}
+          # Set to mobile width; height is now dynamically determined so it's removed
+          SCREENSHOT_WIDTH: 400 
+        run: python email/screenshot_emailer.py
+      
+      - name: Upload screenshots as artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: screenshots
+          path: screenshot*.png
+
