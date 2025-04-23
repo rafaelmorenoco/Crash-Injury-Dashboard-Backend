@@ -3,9 +3,13 @@ name: Run Python Script
 on:
   # Choose when to trigger the workflow
   schedule:
-    - cron: '0 19 * * *'  # Runs at 9:30 AM UTC, which is 5:30 AM Eastern Time during daylight saving time
+    - cron: '0 20 * * *'  # 3:00 PM EDT
   # Optional: manual trigger
   workflow_dispatch:
+
+# Add permissions to allow the workflow to write to the repository
+permissions:
+  contents: write
 
 jobs:
   run-script:
@@ -54,6 +58,7 @@ jobs:
         git config --global user.email "actions@github.com"
         git add last_record_timestamp.txt
         git commit -m "Update last_record_timestamp [skip ci]" || echo "No changes to commit"
+        git remote set-url origin https://x-access-token:${{ github.token }}@github.com/${{ github.repository }}.git
         git push || echo "No changes to push"
     
     - name: Set up Git for frontend repo
