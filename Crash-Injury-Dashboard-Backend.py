@@ -272,6 +272,36 @@ def combine_and_process_data(injury_data, fatality_data):
         on=['OBJECTID', 'CCN', 'MODE', 'SEVERITY', 'REPORTDATE', 'AGE', 'LATITUDE', 'LONGITUDE', 'COUNT', 'ADDRESS','LAST_RECORD']
     )
     
+    # Get the workflow trigger type from environment variable
+    # GitHub Actions sets GITHUB_EVENT_NAME automatically
+    github_event_name = os.environ.get('GITHUB_EVENT_NAME', '')
+    logger.info(f"GitHub event type: {github_event_name}")
+    
+    # Only check timestamp if running from scheduled job
+    if github_event_name == 'schedule':
+        last_record_timestamp = combined_df['LAST_RECORD'].max()
+        logger.info(f"Current LAST_RECORD timestamp: {last_record_timestamp}")
+        
+        # Check if previous timestamp file exists
+        last_timestamp_file = 'last_record_timestamp.txt'
+        if os.path.exists(last_timestamp_file):
+            with open(last_timestamp_file, 'r') as f:
+                prev_timestamp_str = f.read().strip()
+                if prev_timestamp_str:
+                    prev_timestamp = pd.Timestamp(prev_timestamp_str)
+                    logger.info(f"Previous LAST_RECORD timestamp: {prev_timestamp}")
+                    
+                    # Compare timestamps
+                    if prev_timestamp == last_record_timestamp:
+                        logger.error("No new data since last run - LAST_RECORD timestamp is the same")
+                        raise Exception("LAST_RECORD timestamp unchanged since previous run. Failing GitHub Action.")
+        
+        # Save current timestamp for next run
+        with open(last_timestamp_file, 'w') as f:
+            f.write(str(last_record_timestamp))
+    else:
+        logger.info("Manual run detected - skipping timestamp comparison")
+    
     # Remove rows with missing location data
     combined_df = combined_df.dropna(subset=['LATITUDE'])
     
