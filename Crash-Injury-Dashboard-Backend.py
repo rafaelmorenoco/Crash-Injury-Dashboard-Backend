@@ -243,7 +243,11 @@ def process_fatality_data():
 
         gdf_f['AGE'] = gdf_f['AGE'].astype(float)
         gdf_f['COUNT'] = 1
-        gdf_f['REPORTDATE'] = pd.to_datetime(gdf_f['REPORTDATE'], unit='ms').dt.tz_localize('America/New_York')
+        gdf_f['REPORTDATE'] = (
+        pd.to_datetime(gdf_f['REPORTDATE'], unit='ms')
+          .dt.tz_localize('UTC')
+          .dt.tz_convert('America/New_York')
+        )
 
         # Set the LAST_RECORD column to the maximum REPORTDATE
         gdf_f['LAST_RECORD'] = gdf_f['REPORTDATE'].max()
