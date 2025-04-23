@@ -3,7 +3,7 @@ name: Run Python Script
 on:
   # Choose when to trigger the workflow
   schedule:
-    - cron: '0 20 * * *'  # 3:00 PM EDT
+    - cron: '30 20 * * *'  # 3:00 PM EDT
   # Optional: manual trigger
   workflow_dispatch:
 
