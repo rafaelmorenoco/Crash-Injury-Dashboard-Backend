@@ -10,6 +10,7 @@ This system automatically:
 3. Combines and processes the data with spatial joins to add geographic context
 4. Outputs a clean, analysis-ready Parquet file
 5. Automatically updates the frontend repository with the latest data
+6. Checks for data updates on scheduled runs and fails if no new crash data is available
 
 The entire pipeline is automated with GitHub Actions to run daily, ensuring the dashboard displays the most current data available.
 
@@ -37,6 +38,7 @@ The pipeline integrates data from multiple sources:
   - `Single_Member_District_from_2023.geojson` - SMD boundaries
 - `.github/workflows/run-script.yml` - GitHub Actions workflow definition
 - `README.md` - This documentation file
+- `last_record_timestamp.txt` - Tracks the last successful data update timestamp
 
 ## Setup and Configuration
 
@@ -108,6 +110,11 @@ Check the GitHub Actions logs for detailed information about the script executio
 - **API access errors**: Verify your ArcGIS credentials are correctly set up in GitHub Secrets
 - **Data format changes**: If source data formats change, the script may need updating
 - **Missing spatial files**: Ensure all required GeoJSON files are present in the Spatial-Files directory
+- **No new data available**: When running on a schedule, the workflow will fail if no new crash data is detected since the last run. This is expected behavior to prevent unnecessary updates. Manual runs bypass this check.
+
+## Contributing
+
+Contributions to improve the data pipeline are welcome. Please submit a pull request with proposed changes.
 
 ## Contributing
 
