@@ -1,0 +1,27 @@
+{
+    "name": "DC Vision Zero Dashboard Backend",
+    "image": "mcr.microsoft.com/devcontainers/python:3.10",
+    "features": {
+      "ghcr.io/devcontainers/features/git:1": {},
+      "ghcr.io/devcontainers-contrib/features/black:2": {}
+    },
+    "postCreateCommand": "pip install --upgrade pip && pip install -r requirements.txt && pip install jupyterlab matplotlib ipywidgets",
+    "customizations": {
+      "vscode": {
+        "extensions": [
+          "ms-python.python",
+          "ms-toolsai.jupyter",
+          "ms-python.vscode-pylance",
+          "GitHub.copilot"
+        ],
+        "settings": {
+          "python.defaultInterpreterPath": "/usr/local/bin/python",
+          "python.linting.enabled": true,
+          "python.formatting.provider": "black",
+          "python.linting.flake8Enabled": true,
+          "editor.formatOnSave": true
+        }
+      }
+    },
+    "forwardPorts": [8888]
+  }
