@@ -3,7 +3,7 @@ name: Run Python Script
 on:
   # Choose when to trigger the workflow
   schedule:
-    - cron: '0 9 * * *'  # Runs at 9:00 AM UTC, which is 5:00 AM Eastern Time during daylight saving time
+    - cron: '00 10 * * *'  # Runs at 10:00 AM UTC, which is 6:00 AM Eastern Time during daylight saving time
   # Optional: manual trigger
   workflow_dispatch:
 
