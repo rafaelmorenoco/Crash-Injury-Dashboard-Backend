@@ -50,18 +50,19 @@ def send_email_with_embedded_images(gmail_address, app_password, recipient_email
         img_data2 = f.read()
     
     today = datetime.now().strftime('%Y-%m-%d')
+    # Modified HTML: the second image now appears first.
     html = f"""
     <html>
       <body>
         <h2>Daily Crash Injury Dashboard Screenshots</h2>
         <div style="display: flex; flex-wrap: wrap; gap: 20px;">
           <div style="flex: 1; min-width: 300px;">
-            <p>Screenshot of <a href="{url1}">{url1}</a> taken on {today}:</p>
-            <img src="cid:screenshot1" style="max-width:100%; height:auto;">
-          </div>
-          <div style="flex: 1; min-width: 300px;">
             <p>Screenshot of <a href="{url2}">{url2}</a> taken on {today}:</p>
             <img src="cid:screenshot2" style="max-width:100%; height:auto;">
+          </div>
+          <div style="flex: 1; min-width: 300px;">
+            <p>Screenshot of <a href="{url1}">{url1}</a> taken on {today}:</p>
+            <img src="cid:screenshot1" style="max-width:100%; height:auto;">
           </div>
         </div>
         <p>This is an automated email sent from GitHub Actions.</p>
@@ -73,13 +74,13 @@ def send_email_with_embedded_images(gmail_address, app_password, recipient_email
     msg_alternative.attach(MIMEText(html, 'html'))
     msg.attach(msg_alternative)
     
-    # Attach first image
+    # Attach the first image (corresponding to url1)
     image1 = MIMEImage(img_data1)
     image1.add_header('Content-ID', '<screenshot1>')
     image1.add_header('Content-Disposition', 'inline')
     msg.attach(image1)
     
-    # Attach second image
+    # Attach the second image (corresponding to url2)
     image2 = MIMEImage(img_data2)
     image2.add_header('Content-ID', '<screenshot2>')
     image2.add_header('Content-Disposition', 'inline')
@@ -125,9 +126,10 @@ def main():
     )
     
     if success:
-        print(f"Screenshots taken and emailed successfully with embedded images!")
+        print("Screenshots taken and emailed successfully with embedded images!")
     else:
         print("Failed to send email.")
 
 if __name__ == "__main__":
     main()
+
