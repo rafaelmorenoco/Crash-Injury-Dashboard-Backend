@@ -346,11 +346,11 @@ def combine_and_process_data(injury_data, fatality_data):
         gdf_hex_anc = gdf_hex_anc.drop(columns=['index_right'])
         
         # Read SMD polygons
-        smd_path = 'Spatial-Files/Single_Member_District_from_2023.geojson'
+        smd_path = 'Spatial-Files/smd_2023.geojson'
         logger.info(f"Reading SMD polygons from {smd_path}")
         smd = gpd.read_file(smd_path)
         smd = smd.to_crs(4326)
-        smd = smd[['SMD_ID', 'geometry']]
+        smd = smd[['SMD', 'geometry']]
         
         # Join spatially SMD to crashes
         logger.info("Performing spatial join with SMD boundaries")
@@ -372,7 +372,6 @@ def combine_and_process_data(injury_data, fatality_data):
         # Rename columns for consistency
         gdf_hex_anc_smd = gdf_hex_anc_smd.rename(columns={
             'grid_id': 'GRID_ID',
-            'SMD_ID': 'SMD',
             'WARD_ID': 'WARD'
         })
         
