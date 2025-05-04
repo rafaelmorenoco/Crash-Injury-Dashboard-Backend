@@ -1,10 +1,11 @@
 # screenshot_emailer.py
 import os
 import smtplib
+import re
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 from email.mime.image import MIMEImage
-from datetime import datetime
+from datetime import datetime, timedelta
 from playwright.sync_api import sync_playwright
 
 def take_screenshot(url, filename, width=400):
@@ -33,7 +34,68 @@ def take_screenshot(url, filename, width=400):
         # Take a full-page screenshot (the final height is determined automatically).
         page.screenshot(path=filename, full_page=True)
         
-        browser.close()
+        return page.content(), browser
+
+def check_page_content(page_content, url):
+    """
+    Check the page content for:
+    1. The last updated date
+    2. Error messages
+    
+    Returns:
+    - tuple: (is_valid, message)
+      - is_valid: bool - True if page is valid, False otherwise
+      - message: str - Reason if invalid, or confirmation if valid
+    """
+    # Check for error messages (common patterns - can be expanded)
+    error_patterns = [
+        r"error",
+        r"exception",
+        r"failed to load",
+        r"could not connect",
+        r"403",
+        r"404",
+        r"500",
+        r"service unavailable",
+        r"forbidden",
+        r"access denied"
+    ]
+    
+    for pattern in error_patterns:
+        if re.search(pattern, page_content, re.IGNORECASE):
+            return False, f"Error detected in {url}: Found error pattern '{pattern}'"
+    
+    # Look for the date pattern "data was last updated on MM/DD/YY"
+    date_pattern = r"data was last updated on (\d{2}/\d{2}/\d{2})"
+    date_match = re.search(date_pattern, page_content)
+    
+    if not date_match:
+        return False, f"Last updated date does not match today's date in {url}"
+    
+    # Extract the date
+    latest_date_str = date_match.group(1)
+    
+    try:
+        # Parse the date (assuming MM/DD/YY format)
+        latest_date = datetime.strptime(latest_date_str, "%m/%d/%y")
+        
+        # Get today's date and yesterday's date
+        today = datetime.now()
+        yesterday = today - timedelta(days=1)
+        
+        # Format dates for comparison (removing time)
+        latest_date = latest_date.replace(hour=0, minute=0, second=0, microsecond=0)
+        today = today.replace(hour=0, minute=0, second=0, microsecond=0)
+        yesterday = yesterday.replace(hour=0, minute=0, second=0, microsecond=0)
+        
+        # Check if the latest date is today or yesterday (allowing yesterday because data might update with delay)
+        if latest_date >= yesterday:
+            return True, f"Last updated date ({latest_date_str}) is current"
+        else:
+            return False, f"Last updated date ({latest_date_str}) is not current in {url}"
+            
+    except ValueError:
+        return False, f"Could not parse date format: {latest_date_str} in {url}"
 
 def send_email_with_embedded_images(gmail_address, app_password, recipient_email, subject, 
                                    url1, url2, image_path1, image_path2):
@@ -113,13 +175,36 @@ def main():
     filename1 = f"screenshot1_{today}.png"
     filename2 = f"screenshot2_{today}.png"
     
-    # Take screenshots in mobile mode.
+    # Take screenshots and get page content
     print(f"Taking screenshot of {url1}...")
-    take_screenshot(url1, filename1, width)
-    print(f"Taking screenshot of {url2}...")
-    take_screenshot(url2, filename2, width)
+    content1, browser1 = take_screenshot(url1, filename1, width)
     
+    # Check if the first page content is valid
+    is_valid1, message1 = check_page_content(content1, url1)
+    if not is_valid1:
+        print(f"Validation failed for URL1: {message1}")
+        browser1.close()
+        return
+    
+    print(f"URL1 validation passed: {message1}")
+    browser1.close()
+    
+    print(f"Taking screenshot of {url2}...")
+    content2, browser2 = take_screenshot(url2, filename2, width)
+    
+    # Check if the second page content is valid
+    is_valid2, message2 = check_page_content(content2, url2)
+    if not is_valid2:
+        print(f"Validation failed for URL2: {message2}")
+        browser2.close()
+        return
+    
+    print(f"URL2 validation passed: {message2}")
+    browser2.close()
+    
+    # If both validations pass, send the email
     subject = f"Daily Dashboard Screenshots - {today}"
+    print("Both validations passed, sending email...")
     success = send_email_with_embedded_images(
         gmail_address, app_password, recipient_email, subject, 
         url1, url2, filename1, filename2
@@ -132,4 +217,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-
