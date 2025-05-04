@@ -55,7 +55,6 @@ def check_page_content(page_content, url):
         r"could not connect",
         r"403",
         r"404",
-        r"500",
         r"service unavailable",
         r"forbidden",
         r"access denied"
