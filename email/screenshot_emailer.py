@@ -1,10 +1,13 @@
 # screenshot_emailer.py
 import os
+import sys
 import smtplib
+import pytz
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 from email.mime.image import MIMEImage
 from datetime import datetime
+import re
 from playwright.sync_api import sync_playwright
 
 def take_screenshot(url, filename, width=400):
@@ -33,7 +36,21 @@ def take_screenshot(url, filename, width=400):
         # Take a full-page screenshot (the final height is determined automatically).
         page.screenshot(path=filename, full_page=True)
         
-        browser.close()
+        # Return the page content for parsing if needed
+        return page.content()
+
+def extract_latest_update_date(html_content):
+    """
+    Extract the latest update date from the dashboard page HTML content.
+    Looking for a pattern like: "data was last updated on MM/DD/YY HH:MM."
+    """
+    # Using regex to find the date pattern in the format MM/DD/YY in the context of "last updated on"
+    pattern = r"data was last updated on (\d{2}/\d{2}/\d{2})"
+    match = re.search(pattern, html_content)
+    
+    if match:
+        return match.group(1)  # Return the date part
+    return None
 
 def send_email_with_embedded_images(gmail_address, app_password, recipient_email, subject, 
                                    url1, url2, image_path1, image_path2):
@@ -97,6 +114,12 @@ def send_email_with_embedded_images(gmail_address, app_password, recipient_email
         print(f"Failed to send email: {e}")
         return False
 
+def get_today_date_est():
+    """Get today's date in MM/DD/YY format in Eastern Time (EST/EDT)"""
+    eastern = pytz.timezone('US/Eastern')
+    today = datetime.now(eastern)
+    return today.strftime('%m/%d/%y')
+
 def main():
     # Get environment variables.
     url1 = os.environ.get('WEBSITE_URL')
@@ -109,17 +132,39 @@ def main():
     width = int(os.environ.get('SCREENSHOT_WIDTH', 400))
     
     # Generate filenames with current date.
-    today = datetime.now().strftime('%Y-%m-%d')
-    filename1 = f"screenshot1_{today}.png"
-    filename2 = f"screenshot2_{today}.png"
+    eastern = pytz.timezone('US/Eastern')
+    today = datetime.now(eastern)
+    date_str = today.strftime('%Y-%m-%d')
+    filename1 = f"screenshot1_{date_str}.png"
+    filename2 = f"screenshot2_{date_str}.png"
     
-    # Take screenshots in mobile mode.
+    # Take screenshot of the first URL (the dashboard with date info)
     print(f"Taking screenshot of {url1}...")
-    take_screenshot(url1, filename1, width)
+    html_content = take_screenshot(url1, filename1, width)
+    
+    # Extract the latest update date
+    latest_update_date = extract_latest_update_date(html_content)
+    if not latest_update_date:
+        print("Error: Could not find the latest update date in the dashboard page.")
+        sys.exit(1)
+    
+    # Get today's date in Eastern Time
+    today_date_est = get_today_date_est()
+    
+    print(f"Latest update date from dashboard: {latest_update_date}")
+    print(f"Today's date (EST/EDT): {today_date_est}")
+    
+    # Compare dates
+    if latest_update_date != today_date_est:
+        print(f"Data is not updated today. Latest update date ({latest_update_date}) doesn't match today's date ({today_date_est}).")
+        print("Exiting without sending email.")
+        sys.exit(1)
+    
+    # If we get here, dates match, so take the second screenshot and send email
     print(f"Taking screenshot of {url2}...")
     take_screenshot(url2, filename2, width)
     
-    subject = f"Daily Dashboard Screenshots - {today}"
+    subject = f"Daily Dashboard Screenshots - {date_str}"
     success = send_email_with_embedded_images(
         gmail_address, app_password, recipient_email, subject, 
         url1, url2, filename1, filename2
@@ -129,6 +174,7 @@ def main():
         print("Screenshots taken and emailed successfully with embedded images!")
     else:
         print("Failed to send email.")
+        sys.exit(1)
 
 if __name__ == "__main__":
     main()
