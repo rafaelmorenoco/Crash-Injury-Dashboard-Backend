@@ -24,7 +24,7 @@ jobs:
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install playwright
+          pip install playwright pytz
           python -m playwright install chromium
         
       - name: Run screenshot script
@@ -37,10 +37,11 @@ jobs:
           # Set to mobile width; height is now dynamically determined so it's removed
           SCREENSHOT_WIDTH: 400 
         run: python email/screenshot_emailer.py
+        # The script will exit with code 1 if the data is not updated today, which will fail the action
       
       - name: Upload screenshots as artifacts
         uses: actions/upload-artifact@v4
         with:
           name: screenshots
           path: screenshot*.png
-
+        # This step will only execute if the previous step succeeds
