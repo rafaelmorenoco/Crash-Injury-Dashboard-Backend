@@ -36,40 +36,21 @@ def take_screenshot(url, filename, width=400):
         
         return page.content(), browser
 
-def check_page_content(page_content, url):
+def check_date_current(page_content, url):
     """
-    Check the page content for:
-    1. The last updated date
-    2. Error messages
+    Check if the date in the content is current (today or yesterday).
     
     Returns:
     - tuple: (is_valid, message)
-      - is_valid: bool - True if page is valid, False otherwise
+      - is_valid: bool - True if date is current, False otherwise
       - message: str - Reason if invalid, or confirmation if valid
     """
-    # Check for error messages (common patterns - can be expanded)
-    error_patterns = [
-        r"error",
-        r"exception",
-        r"failed to load",
-        r"could not connect",
-        r"403",
-        r"404",
-        r"service unavailable",
-        r"forbidden",
-        r"access denied"
-    ]
-    
-    for pattern in error_patterns:
-        if re.search(pattern, page_content, re.IGNORECASE):
-            return False, f"Error detected in {url}: Found error pattern '{pattern}'"
-    
     # Look for the date pattern "data was last updated on MM/DD/YY"
     date_pattern = r"data was last updated on (\d{2}/\d{2}/\d{2})"
     date_match = re.search(date_pattern, page_content)
     
     if not date_match:
-        return False, f"Last updated date does not match today's date in {url}"
+        return False, f"Could not find 'data was last updated on' text in {url}"
     
     # Extract the date
     latest_date_str = date_match.group(1)
@@ -159,60 +140,64 @@ def send_email_with_embedded_images(gmail_address, app_password, recipient_email
         return False
 
 def main():
-    # Get environment variables.
-    url1 = os.environ.get('WEBSITE_URL')
-    url2 = os.environ.get('WEBSITE_URL_2')
-    gmail_address = os.environ.get('GMAIL_ADDRESS')
-    app_password = os.environ.get('GMAIL_APP_PASSWORD')
-    recipient_email = os.environ.get('RECIPIENT_EMAIL')
+    try:
+        # Get environment variables.
+        url1 = os.environ.get('WEBSITE_URL')
+        url2 = os.environ.get('WEBSITE_URL_2')
+        gmail_address = os.environ.get('GMAIL_ADDRESS')
+        app_password = os.environ.get('GMAIL_APP_PASSWORD')
+        recipient_email = os.environ.get('RECIPIENT_EMAIL')
+        
+        # Use MOBILE default width of 400 (ignoring any environment-provided height).
+        width = int(os.environ.get('SCREENSHOT_WIDTH', 400))
+        
+        # Generate filenames with current date.
+        today = datetime.now().strftime('%Y-%m-%d')
+        filename1 = f"screenshot1_{today}.png"
+        filename2 = f"screenshot2_{today}.png"
+        
+        # Take screenshots and get page content
+        print(f"Taking screenshot of {url1}...")
+        content1, browser1 = take_screenshot(url1, filename1, width)
+        
+        # Check if the first page has a current date
+        is_valid1, message1 = check_date_current(content1, url1)
+        browser1.close()  # Close the browser after checking
+        
+        if not is_valid1:
+            print(f"Date validation failed for URL1: {message1}")
+            return
+        
+        print(f"URL1 date validation passed: {message1}")
+        
+        print(f"Taking screenshot of {url2}...")
+        content2, browser2 = take_screenshot(url2, filename2, width)
+        
+        # Check if the second page has a current date
+        is_valid2, message2 = check_date_current(content2, url2)
+        browser2.close()  # Close the browser after checking
+        
+        if not is_valid2:
+            print(f"Date validation failed for URL2: {message2}")
+            return
+        
+        print(f"URL2 date validation passed: {message2}")
+        
+        # If both dates are current, send the email
+        subject = f"Daily Dashboard Screenshots - {today}"
+        print("Both validations passed, sending email...")
+        success = send_email_with_embedded_images(
+            gmail_address, app_password, recipient_email, subject, 
+            url1, url2, filename1, filename2
+        )
+        
+        if success:
+            print("Screenshots taken and emailed successfully with embedded images!")
+        else:
+            print("Failed to send email.")
     
-    # Use MOBILE default width of 400 (ignoring any environment-provided height).
-    width = int(os.environ.get('SCREENSHOT_WIDTH', 400))
-    
-    # Generate filenames with current date.
-    today = datetime.now().strftime('%Y-%m-%d')
-    filename1 = f"screenshot1_{today}.png"
-    filename2 = f"screenshot2_{today}.png"
-    
-    # Take screenshots and get page content
-    print(f"Taking screenshot of {url1}...")
-    content1, browser1 = take_screenshot(url1, filename1, width)
-    
-    # Check if the first page content is valid
-    is_valid1, message1 = check_page_content(content1, url1)
-    if not is_valid1:
-        print(f"Validation failed for URL1: {message1}")
-        browser1.close()
-        return
-    
-    print(f"URL1 validation passed: {message1}")
-    browser1.close()
-    
-    print(f"Taking screenshot of {url2}...")
-    content2, browser2 = take_screenshot(url2, filename2, width)
-    
-    # Check if the second page content is valid
-    is_valid2, message2 = check_page_content(content2, url2)
-    if not is_valid2:
-        print(f"Validation failed for URL2: {message2}")
-        browser2.close()
-        return
-    
-    print(f"URL2 validation passed: {message2}")
-    browser2.close()
-    
-    # If both validations pass, send the email
-    subject = f"Daily Dashboard Screenshots - {today}"
-    print("Both validations passed, sending email...")
-    success = send_email_with_embedded_images(
-        gmail_address, app_password, recipient_email, subject, 
-        url1, url2, filename1, filename2
-    )
-    
-    if success:
-        print("Screenshots taken and emailed successfully with embedded images!")
-    else:
-        print("Failed to send email.")
+    except Exception as e:
+        print(f"An error occurred during execution: {e}")
 
 if __name__ == "__main__":
     main()
