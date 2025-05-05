@@ -36,7 +36,15 @@ def take_screenshot(url, filename, width=400):
         # Take a full-page screenshot (the final height is determined automatically).
         page.screenshot(path=filename, full_page=True)
         
-        return page.content(), browser
+        # Get the content before closing the browser
+        content = page.content()
+        
+        # Close everything explicitly
+        page.close()
+        context.close()
+        browser.close()
+        
+        return content  # Return just the content, not the browser objects
 
 def check_date_current(page_content, url):
     """
@@ -165,11 +173,10 @@ def main():
         
         # Take screenshots and get page content
         print(f"Taking screenshot of {url1}...")
-        content1, browser1 = take_screenshot(url1, filename1, width)
+        content1 = take_screenshot(url1, filename1, width)
         
         # Check if the first page has a current date
         is_valid1, message1 = check_date_current(content1, url1)
-        browser1.close()  # Close the browser after checking
         
         if not is_valid1:
             print(f"Date validation failed for URL1: {message1}")
@@ -178,11 +185,10 @@ def main():
         print(f"URL1 date validation passed: {message1}")
         
         print(f"Taking screenshot of {url2}...")
-        content2, browser2 = take_screenshot(url2, filename2, width)
+        content2 = take_screenshot(url2, filename2, width)
         
         # Check if the second page has a current date
         is_valid2, message2 = check_date_current(content2, url2)
-        browser2.close()  # Close the browser after checking
         
         if not is_valid2:
             print(f"Date validation failed for URL2: {message2}")
