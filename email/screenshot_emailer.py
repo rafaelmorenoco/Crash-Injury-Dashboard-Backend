@@ -2,10 +2,12 @@
 import os
 import smtplib
 import re
+import sys
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 from email.mime.image import MIMEImage
 from datetime import datetime, timedelta
+from zoneinfo import ZoneInfo  # Python 3.9+ timezone module
 from playwright.sync_api import sync_playwright
 
 def take_screenshot(url, filename, width=400):
@@ -59,14 +61,15 @@ def check_date_current(page_content, url):
         # Parse the date (assuming MM/DD/YY format)
         latest_date = datetime.strptime(latest_date_str, "%m/%d/%y")
         
-        # Get today's date and yesterday's date
-        today = datetime.now()
+        # Get today's date and yesterday's date in Eastern Time (EST/EDT)
+        eastern_tz = ZoneInfo("America/New_York")
+        today = datetime.now(eastern_tz)
         yesterday = today - timedelta(days=1)
         
         # Format dates for comparison (removing time)
         latest_date = latest_date.replace(hour=0, minute=0, second=0, microsecond=0)
-        today = today.replace(hour=0, minute=0, second=0, microsecond=0)
-        yesterday = yesterday.replace(hour=0, minute=0, second=0, microsecond=0)
+        today = today.replace(hour=0, minute=0, second=0, microsecond=0, tzinfo=None)
+        yesterday = yesterday.replace(hour=0, minute=0, second=0, microsecond=0, tzinfo=None)
         
         # Check if the latest date is today or yesterday (allowing yesterday because data might update with delay)
         if latest_date >= yesterday:
@@ -91,7 +94,10 @@ def send_email_with_embedded_images(gmail_address, app_password, recipient_email
     with open(image_path2, 'rb') as f:
         img_data2 = f.read()
     
-    today = datetime.now().strftime('%Y-%m-%d')
+    # Format today's date in Eastern Time
+    eastern_tz = ZoneInfo("America/New_York")
+    today = datetime.now(eastern_tz).strftime('%Y-%m-%d')
+    
     # Modified HTML: the second image now appears first.
     html = f"""
     <html>
@@ -151,8 +157,9 @@ def main():
         # Use MOBILE default width of 400 (ignoring any environment-provided height).
         width = int(os.environ.get('SCREENSHOT_WIDTH', 400))
         
-        # Generate filenames with current date.
-        today = datetime.now().strftime('%Y-%m-%d')
+        # Generate filenames with current date (in Eastern Time).
+        eastern_tz = ZoneInfo("America/New_York")
+        today = datetime.now(eastern_tz).strftime('%Y-%m-%d')
         filename1 = f"screenshot1_{today}.png"
         filename2 = f"screenshot2_{today}.png"
         
@@ -166,7 +173,7 @@ def main():
         
         if not is_valid1:
             print(f"Date validation failed for URL1: {message1}")
-            return
+            sys.exit(1)  # Exit with error code 1 to mark the GitHub Action as failed
         
         print(f"URL1 date validation passed: {message1}")
         
@@ -179,7 +186,7 @@ def main():
         
         if not is_valid2:
             print(f"Date validation failed for URL2: {message2}")
-            return
+            sys.exit(1)  # Exit with error code 1 to mark the GitHub Action as failed
         
         print(f"URL2 date validation passed: {message2}")
         
@@ -193,11 +200,14 @@ def main():
         
         if success:
             print("Screenshots taken and emailed successfully with embedded images!")
+            sys.exit(0)  # Exit with success code 0
         else:
             print("Failed to send email.")
+            sys.exit(1)  # Exit with error code 1 if email sending fails
     
     except Exception as e:
         print(f"An error occurred during execution: {e}")
+        sys.exit(1)  # Exit with error code 1 for any unhandled exceptions
 
 if __name__ == "__main__":
     main()
