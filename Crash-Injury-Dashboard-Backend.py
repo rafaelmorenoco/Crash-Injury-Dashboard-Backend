@@ -213,7 +213,7 @@ def process_fatality_data():
             'motorcycle': 'Motorcyclist*',
             'passenger': 'Passenger',
             'bicyclist': 'Bicyclist',
-            'sco': 'Scooter*',
+            'sco': 'Scooterist*',
             'unknown': 'Unknown'
         })
         
