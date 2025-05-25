@@ -115,6 +115,9 @@ def process_crash_point_data():
         'PERSONTYPE': 'MODE'
     })
     
+    # Modify the AGE column: if AGE is NULL or AGE < 1 or AGE > 120, set it to 120
+    df_cp_cd['AGE'] = df_cp_cd['AGE'].apply(lambda age: 120 if pd.isnull(age) or age < 1 or age > 120 else age)
+    
     # Convert timestamps to datetime with proper timezone conversion
     df_cp_cd['REPORTDATE'] = (
         pd.to_datetime(df_cp_cd['REPORTDATE'], unit='ms')
@@ -248,9 +251,6 @@ def process_fatality_data():
           .dt.tz_localize('UTC')
           .dt.tz_convert('America/New_York')
         )
-
-        # Set the LAST_RECORD column to the maximum REPORTDATE
-        gdf_f['LAST_RECORD'] = gdf_f['REPORTDATE'].max()
         
         logger.info(f"Processed {len(gdf_f)} fatality records")
         return gdf_f
@@ -273,7 +273,7 @@ def combine_and_process_data(injury_data, fatality_data):
     combined_df = pd.merge(
         fatality_data, injury_data, 
         how='outer', 
-        on=['OBJECTID', 'CCN', 'MODE', 'SEVERITY', 'REPORTDATE', 'AGE', 'LATITUDE', 'LONGITUDE', 'COUNT', 'ADDRESS','LAST_RECORD']
+        on=['OBJECTID', 'CCN', 'MODE', 'SEVERITY', 'REPORTDATE', 'AGE', 'LATITUDE', 'LONGITUDE', 'COUNT', 'ADDRESS']
     )
     
     # Get the workflow trigger type from environment variable
