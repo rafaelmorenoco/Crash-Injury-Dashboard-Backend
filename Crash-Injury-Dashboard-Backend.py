@@ -267,7 +267,6 @@ def combine_and_process_data(injury_data, fatality_data):
     injury_data['REPORTDATE'] = injury_data['REPORTDATE'].dt.tz_localize(None).astype('datetime64[ns]')
     injury_data['LAST_RECORD'] = injury_data['LAST_RECORD'].dt.tz_localize(None).astype('datetime64[ns]')
     fatality_data['REPORTDATE'] = fatality_data['REPORTDATE'].dt.tz_localize(None).astype('datetime64[ns]')
-    fatality_data['LAST_RECORD'] = fatality_data['LAST_RECORD'].dt.tz_localize(None).astype('datetime64[ns]')
     
     # Merge the dataframes
     combined_df = pd.merge(
