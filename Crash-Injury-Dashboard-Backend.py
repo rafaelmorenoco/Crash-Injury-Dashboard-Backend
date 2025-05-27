@@ -245,6 +245,8 @@ def process_fatality_data():
                        'ActionsUnderConsideration', 'LATITUDE', 'LONGITUDE']]
 
         gdf_f['AGE'] = gdf_f['AGE'].astype(float)
+        # Modify the AGE column: if AGE is NULL or AGE < 1 or AGE > 120, set it to 120
+        gdf_f['AGE'] = gdf_f['AGE'].apply(lambda age: 120 if pd.isnull(age) or age < 1 or age > 120 else age)
         gdf_f['COUNT'] = 1
         gdf_f['REPORTDATE'] = (
         pd.to_datetime(gdf_f['REPORTDATE'], unit='ms')
