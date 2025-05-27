@@ -156,6 +156,24 @@ def process_crash_point_data():
     
     # Apply severity determination
     df_cp_cd['SEVERITY'] = df_cp_cd.apply(determine_severity, axis=1)
+
+    # ----- Override SEVERITY values with data from TarasInjuries.parquet -----
+    try:
+        # Load the parquet file; it is assumed to have 'PERSONID' and 'SEVERITY'
+        df_taras = pd.read_parquet("TarasInjuries.parquet")[["PERSONID", "SEVERITY"]]
+    except Exception as e:
+        logger.error("Error loading TarasInjuries.parquet: " + str(e))
+        raise e
+
+    # Merge the TarasInjuries data onto df_cp_cd based on PERSONID.
+    # For rows with a matching PERSONID, the SEVERITY value from the parquet file will be added in 'SEVERITY_tar'
+    df_cp_cd = pd.merge(df_cp_cd, df_taras, on="PERSONID", how="left", suffixes=("", "_tar"))
+    
+    # Override SEVERITY with the value from TarasInjuries where available.
+    df_cp_cd['SEVERITY'] = df_cp_cd['SEVERITY_tar'].combine_first(df_cp_cd['SEVERITY'])
+    # Remove the extra temporary column
+    df_cp_cd.drop(columns=['SEVERITY_tar'], inplace=True)
+    # --------------------------------------------------------------------------
     
     # Filter to only injuries
     df_cp_cd = df_cp_cd[df_cp_cd['SEVERITY'] != 'NOINJURY']
