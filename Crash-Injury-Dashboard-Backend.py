@@ -235,7 +235,7 @@ def process_fatality_data():
             'passenger': 'Passenger',
             'bicyclist': 'Bicyclist',
             'sco': 'Scooterist*',
-            'unknown': 'Unknown'
+            'unknown': 'Other'
         })
         
         gdf_f['SEVERITY'] = 'Fatal'
