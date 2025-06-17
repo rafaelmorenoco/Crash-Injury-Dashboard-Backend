@@ -1,0 +1,25 @@
+# Core dependencies for DC Vision Zero Dashboard Backend
+numpy==1.24.2
+pandas==2.0.3
+geopandas==0.13.2
+pyarrow==13.0.0
+requests==2.26.0
+fiona==1.9.4
+arcgis==2.2.0
+gssapi==1.9.0
+
+# Additional development dependencies
+jupyter
+matplotlib
+seaborn
+plotly
+folium
+
+# Code quality and formatting
+black
+flake8
+pylint
+
+# Testing
+pytest
+pytest-cov
