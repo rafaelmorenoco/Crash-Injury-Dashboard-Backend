@@ -21,11 +21,14 @@
         "python.linting.flake8Enabled": true,
         "python.formatting.provider": "black",
         "editor.formatOnSave": true,
-        "python.terminal.activateEnvironment": true
+        "python.terminal.activateEnvironment": true,
+        "python.dataScience.sendSelectionToInteractiveWindow": true
       }
     }
   },
-  "forwardPorts": [8888],
+  "forwardPorts": [
+    8888
+  ],
   "remoteEnv": {
     "PYTHONPATH": "/workspaces/${localWorkspaceFolderBasename}",
     "CPLUS_INCLUDE_PATH": "/usr/include/gdal",
