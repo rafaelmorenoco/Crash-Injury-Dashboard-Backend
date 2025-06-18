@@ -1,11 +1,10 @@
 {
   "name": "DC Vision Zero Dashboard Backend",
-  "image": "mcr.microsoft.com/devcontainers/python:3.10",
+  "image": "mcr.microsoft.com/devcontainers/python:1-3.10-bullseye",
   "features": {
-    "ghcr.io/devcontainers/features/git:1": {},
-    "ghcr.io/devcontainers-contrib/features/black:2": {}
+    "ghcr.io/devcontainers/features/git:1": {}
   },
-  "postCreateCommand": "pip install --upgrade pip && pip install -r requirements.txt && pip install jupyterlab matplotlib ipywidgets",
+  "postCreateCommand": "bash -c 'sudo apt-get update && sudo apt-get install -y libgdal-dev gdal-bin libproj-dev proj-data proj-bin libgeos-dev libspatialindex-dev libkrb5-dev build-essential && pip install --upgrade pip && pip install -r requirements.txt && pip install black flake8'",
   "customizations": {
     "vscode": {
       "extensions": [
@@ -28,6 +27,8 @@
   },
   "forwardPorts": [8888],
   "remoteEnv": {
-    "PYTHONPATH": "/workspaces/${localWorkspaceFolderBasename}"
+    "PYTHONPATH": "/workspaces/${localWorkspaceFolderBasename}",
+    "CPLUS_INCLUDE_PATH": "/usr/include/gdal",
+    "C_INCLUDE_PATH": "/usr/include/gdal"
   }
 }
