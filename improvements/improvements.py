@@ -105,6 +105,143 @@ hex_grid['CE'] = hex_grid['grid_id'].map(hex_ce).fillna(0)
 # -----------------------------
 # 7. Output
 # -----------------------------
-# Save the updated hex_grid as a GeoJSON file
-hex_grid = hex_grid.to_crs(4326)
-hex_grid.to_file('crash-hexgrid.geojson', driver='GeoJSON')
+# Remove the geometry column for final output
+hex_grid = pd.DataFrame(hex_grid.drop(columns=['geometry']))
+# Save the updated hex_grid as a parquet file
+parquet_schema = pa.Table.from_pandas(df=hex_grid).schema
+table = pa.Table.from_pandas(hex_grid, parquet_schema)
+
+output_file = 'crash-hexgrid.parquet'
+pq.write_table(table, output_file)
+
+# ----------------------------------------------------------------
+# Process Each Spatial File Separately
+# ----------------------------------------------------------------
+# The following sections create one aggregated DataFrame per file.
+
+# ----------------------------
+# Process ANC (anc_2023.geojson)
+# Native ID field: "ANC"
+# ----------------------------
+anc_path = '/workspaces/Crash-Injury-Dashboard-Backend/Spatial-Files/anc_2023.geojson'
+anc_id_field = 'ANC'
+
+gdf_anc = gpd.read_file(anc_path)
+gdf_anc = gdf_anc.to_crs(26985)
+gdf_anc[anc_id_field] = gdf_anc[anc_id_field].astype(str)
+
+# Aggregate LPI
+join_lpi = gpd.sjoin(gdf_anc, gdf_lpi, how='left', predicate='contains')
+agg_lpi = join_lpi.groupby(anc_id_field)['LPI'].sum()
+gdf_anc['LPI'] = gdf_anc[anc_id_field].map(agg_lpi).fillna(0)
+
+# Aggregate RRFB
+join_rrfb = gpd.sjoin(gdf_anc, gdf_rrfb, how='left', predicate='contains')
+agg_rrfb = join_rrfb.groupby(anc_id_field)['RRFB'].sum()
+gdf_anc['RRFB'] = gdf_anc[anc_id_field].map(agg_rrfb).fillna(0)
+
+# Aggregate SLS
+join_sls = gpd.sjoin(gdf_anc, gdf_sls, how='left', predicate='contains')
+agg_sls = join_sls.groupby(anc_id_field)['SLS'].sum()
+gdf_anc['SLS'] = gdf_anc[anc_id_field].map(agg_sls).fillna(0)
+
+# Aggregate CE
+join_ce = gpd.sjoin(gdf_anc, gdf_ce, how='left', predicate='contains')
+agg_ce = join_ce.groupby(anc_id_field)['CE'].sum()
+gdf_anc['CE'] = gdf_anc[anc_id_field].map(agg_ce).fillna(0)
+
+anc_df = pd.DataFrame(gdf_anc.drop(columns=['geometry']))
+anc_df[['LPI', 'RRFB', 'SLS', 'CE']] = anc_df[[
+    'LPI', 'RRFB', 'SLS', 'CE']].astype(float)
+
+# Save as parquet file
+parquet_schema = pa.Table.from_pandas(df=anc_df).schema
+table = pa.Table.from_pandas(anc_df, parquet_schema)
+
+output_file = 'anc_2023.parquet'
+pq.write_table(table, output_file)
+
+# ----------------------------
+# Process SMD (smd_2023.geojson)
+# Native ID field: "SMD"
+# ----------------------------
+smd_path = '/workspaces/Crash-Injury-Dashboard-Backend/Spatial-Files/smd_2023.geojson'
+smd_id_field = 'SMD'
+
+gdf_smd = gpd.read_file(smd_path)
+gdf_smd = gdf_smd.to_crs(26985)
+gdf_smd[smd_id_field] = gdf_smd[smd_id_field].astype(str)
+
+# Aggregate LPI
+join_lpi = gpd.sjoin(gdf_smd, gdf_lpi, how='left', predicate='contains')
+agg_lpi = join_lpi.groupby(smd_id_field)['LPI'].sum()
+gdf_smd['LPI'] = gdf_smd[smd_id_field].map(agg_lpi).fillna(0)
+
+# Aggregate RRFB
+join_rrfb = gpd.sjoin(gdf_smd, gdf_rrfb, how='left', predicate='contains')
+agg_rrfb = join_rrfb.groupby(smd_id_field)['RRFB'].sum()
+gdf_smd['RRFB'] = gdf_smd[smd_id_field].map(agg_rrfb).fillna(0)
+
+# Aggregate SLS
+join_sls = gpd.sjoin(gdf_smd, gdf_sls, how='left', predicate='contains')
+agg_sls = join_sls.groupby(smd_id_field)['SLS'].sum()
+gdf_smd['SLS'] = gdf_smd[smd_id_field].map(agg_sls).fillna(0)
+
+# Aggregate CE
+join_ce = gpd.sjoin(gdf_smd, gdf_ce, how='left', predicate='contains')
+agg_ce = join_ce.groupby(smd_id_field)['CE'].sum()
+gdf_smd['CE'] = gdf_smd[smd_id_field].map(agg_ce).fillna(0)
+
+smd_df = pd.DataFrame(gdf_smd.drop(columns=['geometry']))
+smd_df[['LPI', 'RRFB', 'SLS', 'CE']] = smd_df[[
+    'LPI', 'RRFB', 'SLS', 'CE']].astype(float)
+
+# Save as parquet file
+parquet_schema = pa.Table.from_pandas(df=smd_df).schema
+table = pa.Table.from_pandas(smd_df, parquet_schema)
+
+output_file = 'smd_2023.parquet'
+pq.write_table(table, output_file)
+
+# ----------------------------
+# Process Wards (Wards_from_2022.geojson)
+# Native ID field: "WARD_ID"
+# ----------------------------
+ward_path = '/workspaces/Crash-Injury-Dashboard-Backend/Spatial-Files/Wards_from_2022.geojson'
+ward_id_field = 'WARD_ID'
+
+gdf_ward = gpd.read_file(ward_path)
+gdf_ward = gdf_ward.to_crs(26985)
+gdf_ward[ward_id_field] = gdf_ward[ward_id_field].astype(str)
+
+# Aggregate LPI
+join_lpi = gpd.sjoin(gdf_ward, gdf_lpi, how='left', predicate='contains')
+agg_lpi = join_lpi.groupby(ward_id_field)['LPI'].sum()
+gdf_ward['LPI'] = gdf_ward[ward_id_field].map(agg_lpi).fillna(0)
+
+# Aggregate RRFB
+join_rrfb = gpd.sjoin(gdf_ward, gdf_rrfb, how='left', predicate='contains')
+agg_rrfb = join_rrfb.groupby(ward_id_field)['RRFB'].sum()
+gdf_ward['RRFB'] = gdf_ward[ward_id_field].map(agg_rrfb).fillna(0)
+
+# Aggregate SLS
+join_sls = gpd.sjoin(gdf_ward, gdf_sls, how='left', predicate='contains')
+agg_sls = join_sls.groupby(ward_id_field)['SLS'].sum()
+gdf_ward['SLS'] = gdf_ward[ward_id_field].map(agg_sls).fillna(0)
+
+# Aggregate CE
+join_ce = gpd.sjoin(gdf_ward, gdf_ce, how='left', predicate='contains')
+agg_ce = join_ce.groupby(ward_id_field)['CE'].sum()
+gdf_ward['CE'] = gdf_ward[ward_id_field].map(agg_ce).fillna(0)
+
+ward_df = pd.DataFrame(gdf_ward.drop(columns=['geometry']))
+ward_df = ward_df[['WARD', 'NAME', 'WARD_ID', 'LPI', 'RRFB', 'SLS', 'CE']]
+ward_df[['WARD', 'LPI', 'RRFB', 'SLS', 'CE']] = ward_df[[
+    'WARD', 'LPI', 'RRFB', 'SLS', 'CE']].astype(float)
+
+# Save as parquet file
+parquet_schema = pa.Table.from_pandas(df=ward_df).schema
+table = pa.Table.from_pandas(ward_df, parquet_schema)
+
+output_file = 'wards_2022.parquet'
+pq.write_table(table, output_file)
