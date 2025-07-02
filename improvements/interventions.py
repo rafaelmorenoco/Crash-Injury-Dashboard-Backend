@@ -28,10 +28,11 @@ def load_improvement(env_var: str, name: str, where: str = "1=1") -> gpd.GeoData
 
 
 # 2. Load each improvement
-gdf_lpi = load_improvement("ARCGIS_FL_LPI",  "LPI")
+gdf_lpi = load_improvement(
+    "ARCGIS_FL_LPI",  "Leading Pedestrian Intervals (LPI)")
 gdf_rrfb = load_improvement(
-    "ARCGIS_FL_RRFB", "RRFB", where="Status = 'Existing'")
-gdf_ce = load_improvement("ARCGIS_FL_CE",   "CE",
+    "ARCGIS_FL_RRFB", "Rectangular Rapid Flashing Beacon (RRFB)", where="Status = 'Existing'")
+gdf_ce = load_improvement("ARCGIS_FL_CE",   "Curb Extensions",
                           where="HASSAFETYIMP IN ('Tactical','Permanent')")
 sls_where = (
     "SIGNSTATUS = 1 AND SIGNNUMBER = 20 AND "
@@ -39,7 +40,8 @@ sls_where = (
     "'R-NS-110','R-NS-104','r-ns-173','r2-12','S5-1','W13-7') "
     "AND SignDescription LIKE '%Speed Limit%'"
 )
-gdf_sls = load_improvement("ARCGIS_FL_SLS", "SLS", where=sls_where)
+gdf_sls = load_improvement(
+    "ARCGIS_FL_SLS", "20 MPH Speed Limit Signs", where=sls_where)
 
 # 3. Read zone GeoJSONs and standardize ID fields
 anc_path = f"{BASE_PATH}/anc_2023.geojson"
@@ -123,4 +125,4 @@ counts["Count"] = counts["Count"].astype(float)
 
 # 8. Write single Parquet
 table = pa.Table.from_pandas(counts)
-pq.write_table(table, "improvements.parquet")
+pq.write_table(table, "interventions.parquet")
