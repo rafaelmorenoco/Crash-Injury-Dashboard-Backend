@@ -40,8 +40,13 @@ sls_where = (
     "'R-NS-110','R-NS-104','r-ns-173','r2-12','S5-1','W13-7') "
     "AND SignDescription LIKE '%Speed Limit%'"
 )
-gdf_sls = load_improvement(
-    "ARCGIS_FL_SLS", "20 MPH Speed Limit Signs", where=sls_where)
+# gdf_sls = load_improvement(
+#     "ARCGIS_FL_SLS", "20 MPH Speed Limit Signs", where=sls_where)
+gdf_asap_p = load_improvement(
+    "ARCGIS_FL_ASAP_P", "Annual Safety Improvement Program (ASAP)", where="(ProjectStatus = 9 Or ProjectStatus = 10) And WorkType IN ('CPDO-MM-SAFETY', 'COO-HSIP-IMP', 'COO-PFCS-IMP', 'COO-PAS_IMP', 'CPDO-HS-SPMGT') And ProjectIdentifier IN ('TRAFFIC_SAFETY_2023', 'TRAFFIC_SAFETY_2022', 'TRAFFIC_SAFETY_2021', 'TRAFFIC_SAFETY_2024', 'TRAFFIC_SAFETY_2025', 'TRAFFIC_SAFETY_2026', 'TRAFFIC_SAFETY_2027')")
+gdf_asap_l = load_improvement(
+    "ARCGIS_FL_ASAP_L", "Annual Safety Improvement Program (ASAP)", where="ProjectStatus = 10 And WorkType IN ('CPDO-HS-SPMGT', 'CPDO-MM-SAFETY', 'COO-PFCS-IMP', 'COO-HSIP-IMP', 'COO-PAS_IMP') And ProjectIdentifier IN ('TRAFFIC_SAFETY_2021', 'TRAFFIC_SAFETY_2023', 'TRAFFIC_SAFETY_2022', 'TRAFFIC_SAFETY_2024', 'TRAFFIC_SAFETY_2027', 'TRAFFIC_SAFETY_2025', 'TRAFFIC_SAFETY_2026')")
+gdf_asap = pd.concat([gdf_asap_p, gdf_asap_l], ignore_index=True)
 
 # 3. Read zone GeoJSONs and standardize ID fields
 anc_path = f"{BASE_PATH}/anc_2023.geojson"
@@ -58,7 +63,7 @@ gdf_ward = gpd.read_file(ward_path).to_crs(CRS)
 gdf_ward["WARD"] = gdf_ward["WARD_ID"].astype(str)
 
 # 4. Combine all improvements into one GeoDataFrame
-gdf_all = pd.concat([gdf_lpi, gdf_rrfb, gdf_ce, gdf_sls], ignore_index=True)
+gdf_all = pd.concat([gdf_lpi, gdf_rrfb, gdf_ce, gdf_asap], ignore_index=True)
 gdf_all = gpd.GeoDataFrame(gdf_all, geometry="SHAPE", crs=CRS)
 
 # 5. Spatial‐join improvements → ANC, SMD, Ward
@@ -70,7 +75,7 @@ gdf_all = (
         gdf_all,
         gdf_anc[["ANC", "geometry"]],
         how="left",
-        predicate="within"
+        predicate="intersects"
     )
     .drop(columns=["index_right"])
 )
@@ -81,7 +86,7 @@ gdf_all = (
         gdf_all,
         gdf_smd[["SMD", "geometry"]],
         how="left",
-        predicate="within"
+        predicate="intersects"
     )
     .drop(columns=["index_right"])
 )
@@ -92,7 +97,7 @@ gdf_all = (
         gdf_all,
         gdf_ward[["WARD", "geometry"]],
         how="left",
-        predicate="within"
+        predicate="intersects"
     )
     .drop(columns=["index_right"])
 )
