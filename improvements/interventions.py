@@ -43,10 +43,12 @@ sls_where = (
 # gdf_sls = load_improvement(
 #     "ARCGIS_FL_SLS", "20 MPH Speed Limit Signs", where=sls_where)
 gdf_asap_p = load_improvement(
-    "ARCGIS_FL_ASAP_P", "Annual Safety Improvement Program (ASAP)", where="(ProjectStatus = 9 Or ProjectStatus = 10) And WorkType IN ('CPDO-MM-SAFETY', 'COO-HSIP-IMP', 'COO-PFCS-IMP', 'COO-PAS_IMP', 'CPDO-HS-SPMGT') And ProjectIdentifier IN ('TRAFFIC_SAFETY_2023', 'TRAFFIC_SAFETY_2022', 'TRAFFIC_SAFETY_2021', 'TRAFFIC_SAFETY_2024', 'TRAFFIC_SAFETY_2025', 'TRAFFIC_SAFETY_2026', 'TRAFFIC_SAFETY_2027')")
-gdf_asap_l = load_improvement(
-    "ARCGIS_FL_ASAP_L", "Annual Safety Improvement Program (ASAP)", where="ProjectStatus = 10 And WorkType IN ('CPDO-HS-SPMGT', 'CPDO-MM-SAFETY', 'COO-PFCS-IMP', 'COO-HSIP-IMP', 'COO-PAS_IMP') And ProjectIdentifier IN ('TRAFFIC_SAFETY_2021', 'TRAFFIC_SAFETY_2023', 'TRAFFIC_SAFETY_2022', 'TRAFFIC_SAFETY_2024', 'TRAFFIC_SAFETY_2027', 'TRAFFIC_SAFETY_2025', 'TRAFFIC_SAFETY_2026')")
-gdf_asap = pd.concat([gdf_asap_p, gdf_asap_l], ignore_index=True)
+    "ARCGIS_FL_ASAP_P", "Annual Safety Improvement Program (ASAP) - Intersections", where="(ProjectStatus = 9 Or ProjectStatus = 10) And WorkType IN ('CPDO-MM-SAFETY', 'COO-HSIP-IMP', 'COO-PFCS-IMP', 'COO-PAS_IMP', 'CPDO-HS-SPMGT') And ProjectIdentifier IN ('TRAFFIC_SAFETY_2023', 'TRAFFIC_SAFETY_2022', 'TRAFFIC_SAFETY_2021', 'TRAFFIC_SAFETY_2024', 'TRAFFIC_SAFETY_2025', 'TRAFFIC_SAFETY_2026', 'TRAFFIC_SAFETY_2027')")
+# gdf_asap_l = load_improvement(
+#    "ARCGIS_FL_ASAP_L", "Annual Safety Improvement Program (ASAP)", where="ProjectStatus = 10 And WorkType IN ('CPDO-HS-SPMGT', 'CPDO-MM-SAFETY', 'COO-PFCS-IMP', 'COO-HSIP-IMP', 'COO-PAS_IMP') And ProjectIdentifier IN ('TRAFFIC_SAFETY_2021', 'TRAFFIC_SAFETY_2023', 'TRAFFIC_SAFETY_2022', 'TRAFFIC_SAFETY_2024', 'TRAFFIC_SAFETY_2027', 'TRAFFIC_SAFETY_2025', 'TRAFFIC_SAFETY_2026')")
+# gdf_asap = pd.concat([gdf_asap_p, gdf_asap_l], ignore_index=True)
+
+gdf_asap = gdf_asap_p
 
 # 3. Read zone GeoJSONs and standardize ID fields
 anc_path = f"{BASE_PATH}/anc_2023.geojson"
