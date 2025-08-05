@@ -15,6 +15,6 @@ crashes.parquet
 screenshot*.png
 .jupyter/
 .ipynb_checkpoints/
-
+Roads.geojson
 # Keep requirements.txt for devcontainer
 # requirements.txt
