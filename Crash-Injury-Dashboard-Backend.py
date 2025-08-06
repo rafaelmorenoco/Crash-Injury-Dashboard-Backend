@@ -17,7 +17,7 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 
-def fetch_all_features(url, where="1=1", outFields="*", outSR="4326", f="json"):
+def fetch_all_features(url, where="1=1", outFields="*", outSR="EPSG:26985", f="json"):
     """
     Fetches all features from the provided ESRI REST API URL handling pagination.
 
@@ -25,7 +25,7 @@ def fetch_all_features(url, where="1=1", outFields="*", outSR="4326", f="json"):
         url (str): The API endpoint.
         where (str): SQL-like where clause for filtering. Default is to retrieve all records.
         outFields (str): Fields to be returned. Default is '*' for all fields.
-        outSR (str): Spatial reference of the output. Default is '4326'.
+        outSR (str): Spatial reference of the output. Default is 'EPSG:26985'.
         f (str): Format of the returned data. Default is 'json'.
 
     Returns:
@@ -239,7 +239,7 @@ def process_fatality_data():
 
         # Sort and convert to GeoDataFrame
         df_fs = df_f.sort_values(by='datetime', ascending=False)
-        gdf_f = gpd.GeoDataFrame(df_fs, geometry='SHAPE', crs=4326)
+        gdf_f = gpd.GeoDataFrame(df_fs, geometry='SHAPE', crs="EPSG:26985")
 
         # Extract coordinates
         gdf_f['LATITUDE'] = gdf_f['SHAPE'].y
@@ -388,7 +388,7 @@ def combine_and_process_data(injury_data, fatality_data):
     gdf = gpd.GeoDataFrame(
         combined_df,
         geometry=gpd.points_from_xy(
-            combined_df.LONGITUDE, combined_df.LATITUDE, crs=4326)
+            combined_df.LONGITUDE, combined_df.LATITUDE, crs="EPSG:26985")
     )
 
     logger.info(f"Combined data has {len(gdf)} records")
@@ -399,7 +399,7 @@ def combine_and_process_data(injury_data, fatality_data):
         hex_path = 'Spatial-Files/crash-hexgrid.geojson'
         logger.info(f"Reading hex grid from {hex_path}")
         hex_grid = gpd.read_file(hex_path)
-        hex_grid = hex_grid.to_crs(4326)
+        hex_grid = hex_grid.to_crs("EPSG:26985")
 
         # Add 'HEX_' prefix to grid_id
         hex_grid['grid_id'] = hex_grid['grid_id'].apply(lambda x: f'HEX_{x}')
@@ -413,7 +413,7 @@ def combine_and_process_data(injury_data, fatality_data):
         anc_path = 'Spatial-Files/anc_2023.geojson'
         logger.info(f"Reading ANC polygons from {anc_path}")
         anc = gpd.read_file(anc_path)
-        anc = anc.to_crs(4326)
+        anc = anc.to_crs("EPSG:26985")
         anc = anc[['ANC', 'geometry']]
 
         # Join spatially ANC to crashes
@@ -425,7 +425,7 @@ def combine_and_process_data(injury_data, fatality_data):
         smd_path = 'Spatial-Files/smd_2023.geojson'
         logger.info(f"Reading SMD polygons from {smd_path}")
         smd = gpd.read_file(smd_path)
-        smd = smd.to_crs(4326)
+        smd = smd.to_crs("EPSG:26985")
         smd = smd[['SMD', 'geometry']]
 
         # Join spatially SMD to crashes
@@ -437,25 +437,57 @@ def combine_and_process_data(injury_data, fatality_data):
         ward_path = 'Spatial-Files/Wards_from_2022.geojson'
         logger.info(f"Reading WARD polygons from {ward_path}")
         wards = gpd.read_file(ward_path)
-        wards = wards.to_crs(4326)
+        wards = wards.to_crs("EPSG:26985")
         wards = wards[['WARD_ID', 'geometry']]
 
         logger.info("Performing spatial join with WARD boundaries")
         gdf_hex_anc_smd = gpd.sjoin(gdf_hex_anc_smd, wards, how='left')
         gdf_hex_anc_smd = gdf_hex_anc_smd.drop(columns=['index_right'])
+
+        # Join spatially HIN polygons to crashes
+        hin_path = 'Spatial-Files/hin-polygon-clean.geojson'
+        logger.info(f"Reading HIN polygons from {hin_path}")
+        hin = gpd.read_file(hin_path)
+        hin = hin.to_crs("EPSG:26985")
+
+        # Select only the required columns
+        hin = hin[['ROUTENAME', 'TIER_1', 'TIER_2', 'TIER_3', 'geometry']]
+
+        # Create HIN_TIER column based on TIER values
+        def determine_hin_tier(row):
+            """Determine HIN tier based on TIER columns"""
+            if row['TIER_1'] == 1:
+                return '1'
+            elif row['TIER_2'] == 1:
+                return '2'
+            elif row['TIER_3'] == 1:
+                return '3'
+            else:
+                return None
+
+        # Apply the tier determination function
+        hin['HIN_TIER'] = hin.apply(determine_hin_tier, axis=1)
+
+        # Select final columns for the join (drop individual TIER columns)
+        hin = hin[['ROUTENAME', 'HIN_TIER', 'geometry']]
+
+        logger.info("Performing spatial join with HIN boundaries")
+        gdf_hex_anc_smd_hin = gpd.sjoin(gdf_hex_anc_smd, hin, how='left')
+        gdf_hex_anc_smd_hin = gdf_hex_anc_smd_hin.drop(columns=['index_right'])
         # -----------------------------------------
 
         # Rename columns for consistency
-        gdf_hex_anc_smd = gdf_hex_anc_smd.rename(columns={
+        gdf_hex_anc_smd_hin = gdf_hex_anc_smd_hin.rename(columns={
             'grid_id': 'GRID_ID',
-            'WARD_ID': 'WARD'
+            'WARD_ID': 'WARD',
+            'ROUTENAME': 'HIN_ROUTE'
         })
 
         # Drop the geometry column to create a plain DataFrame result
-        gdf_hex_anc_smd = gdf_hex_anc_smd.drop(columns=['geometry'])
+        gdf_hex_anc_smd_hin = gdf_hex_anc_smd_hin.drop(columns=['geometry'])
 
         # Convert back to DataFrame
-        crash_hex = pd.DataFrame(gdf_hex_anc_smd)
+        crash_hex = pd.DataFrame(gdf_hex_anc_smd_hin)
 
         logger.info("Spatial joins completed successfully")
         return crash_hex
