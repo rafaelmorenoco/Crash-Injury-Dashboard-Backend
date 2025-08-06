@@ -22,11 +22,14 @@ gdf_roads = gpd.read_file(roads_path).to_crs(CRS)
 hin_path = f"{BASE_PATH}/High_Injury_Network.geojson"
 gdf_hin = gpd.read_file(hin_path).to_crs(CRS)
 
+gdf_hin_buffered = gdf_hin.copy()
+gdf_hin_buffered.geometry = gdf_hin_buffered.geometry.buffer(5)
+
 # Spatial‐join roads → hin
 gdf_roads_hin = (
     gpd.sjoin(
         gdf_roads,
-        gdf_hin,
+        gdf_hin_buffered,
         how="inner",
         predicate="intersects"
     )
