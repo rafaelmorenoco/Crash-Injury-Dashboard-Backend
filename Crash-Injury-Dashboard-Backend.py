@@ -271,14 +271,17 @@ def process_fatality_data():
             'second_striking_vehicleobject': 'SecondStrikingVehicleObject',
             'factors_discussed_at_site': 'FactorsDiscussedAtSiteVisit',
             'actions_planned_completed': 'ActionsPlannedAndCompleted',
-            'actions_under_consideration': 'ActionsUnderConsideration'
+            'actions_under_consideration': 'ActionsUnderConsideration',
+            'suspected_impaired': 'SuspectedImpaired',
+            'suspected_speeding': 'SuspectedSpeeding'
         })
 
         # Select columns
         gdf_f = gdf_f[['OBJECTID', 'CCN', 'MODE', 'SEVERITY', 'REPORTDATE', 'ADDRESS', 'AGE',
                        'StrinkingVehicle', 'SecondStrikingVehicleObject', 'SiteVisitStatus',
                        'FactorsDiscussedAtSiteVisit', 'ActionsPlannedAndCompleted',
-                       'ActionsUnderConsideration', 'LATITUDE', 'LONGITUDE']]
+                       'ActionsUnderConsideration', 'SuspectedImpaired', 'SuspectedSpeeding',
+                       'LATITUDE', 'LONGITUDE']]
 
         # Define the mapping dictionary
         mapping_ssvo = {
