@@ -61,3 +61,18 @@ plt.show()
 # Write resulting GeoJSON
 gdf_roads_hin = gdf_roads_hin.to_crs("EPSG:4326")
 gdf_roads_hin.to_file("hin-polygons.geojson", driver="GeoJSON")
+
+'''
+# Final Clean from ArcGIS Pro
+
+# Constants
+BASE_PATH = "/workspaces/Crash-Injury-Dashboard-Backend/hin"
+
+# Read hin GeoJSON
+hin_path = f"{BASE_PATH}/hin_fc.geojson"
+gdf_hin = gpd.read_file(hin_path)
+
+hin_merged = gdf_hin.dissolve(by="ROUTENAME")
+
+hin_merged.to_file("hin_merged.geojson", driver="GeoJSON")
+'''
