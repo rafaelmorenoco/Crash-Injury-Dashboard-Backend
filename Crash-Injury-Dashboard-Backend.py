@@ -218,9 +218,9 @@ def process_fatality_data():
 
     try:
         # Get credentials from environment variables
-        client_id = os.environ.get('ARCGIS_CLIENT_ID')
-        client_secret = os.environ.get('ARCGIS_CLIENT_SECRET')
-        feature_layer_id = os.environ.get('ARCGIS_FEATURE_LAYER_ID')
+        client_id = "t4BI7yTbNdo0eGUy"
+        client_secret = "1e65b41dce844ce3811a5d03efcfcb49"
+        feature_layer_id = "803bb925aea64263af5df219bbda9dfc"
 
         if not all([client_id, client_secret, feature_layer_id]):
             logger.error("Missing ArcGIS credentials in environment variables")
@@ -476,14 +476,41 @@ def combine_and_process_data(injury_data, fatality_data):
 
         logger.info("Performing spatial join with HIN boundaries")
         gdf_hex_anc_smd_hin = gpd.sjoin(gdf_hex_anc_smd, hin, how='left')
-        gdf_hex_anc_smd_hin = gdf_hex_anc_smd_hin.drop(columns=['index_right'])
+
+        # Group matches per crash point
+        agg = (
+            gdf_hex_anc_smd_hin.groupby('OBJECTID')
+            .agg({
+                'ROUTENAME': lambda x: list(pd.unique(x.dropna())),
+                'HIN_TIER': lambda x: list(pd.unique(x.dropna()))
+            })
+            .reset_index()
+        )
+
+        # Ensure max length = 3 for ROUTENAME, 2 for HIN_TIER
+        max_routes = 3
+        max_tiers = 2
+
+        for i in range(max_routes):
+            agg[f'ROUTENAME_{chr(65+i)}'] = agg['ROUTENAME'].apply(
+                lambda lst: lst[i] if i < len(lst) else None)
+
+        for i in range(max_tiers):
+            agg[f'HIN_TIER_{chr(65+i)}'] = agg['HIN_TIER'].apply(
+                lambda lst: lst[i] if i < len(lst) else None)
+
+        # Drop the list columns if you don't need them
+        agg = agg.drop(columns=['ROUTENAME', 'HIN_TIER'])
+
+        # Merge back to original crash GeoDataFrame
+        gdf_hex_anc_smd_hin = gdf_hex_anc_smd.reset_index().merge(
+            agg, on='OBJECTID', how='left')
         # -----------------------------------------
 
         # Rename columns for consistency
         gdf_hex_anc_smd_hin = gdf_hex_anc_smd_hin.rename(columns={
             'grid_id': 'GRID_ID',
-            'WARD_ID': 'WARD',
-            'ROUTENAME': 'HIN_ROUTE'
+            'WARD_ID': 'WARD'
         })
 
         # Drop the geometry column to create a plain DataFrame result
