@@ -218,9 +218,9 @@ def process_fatality_data():
 
     try:
         # Get credentials from environment variables
-        client_id = "t4BI7yTbNdo0eGUy"
-        client_secret = "1e65b41dce844ce3811a5d03efcfcb49"
-        feature_layer_id = "803bb925aea64263af5df219bbda9dfc"
+        client_id = os.environ.get('ARCGIS_CLIENT_ID')
+        client_secret = os.environ.get('ARCGIS_CLIENT_SECRET')
+        feature_layer_id = os.environ.get('ARCGIS_FEATURE_LAYER_ID')
 
         if not all([client_id, client_secret, feature_layer_id]):
             logger.error("Missing ArcGIS credentials in environment variables")
@@ -454,7 +454,8 @@ def combine_and_process_data(injury_data, fatality_data):
         hin = hin.to_crs(4326)
 
         # Select only the required columns
-        hin = hin[['ROUTENAME', 'TIER_1', 'TIER_2', 'TIER_3', 'geometry']]
+        hin = hin[['ROUTENAME', 'TIER_1', 'TIER_2',
+                   'TIER_3', 'GIS_ID', 'geometry']]
 
         # Create HIN_TIER column based on TIER values
         def determine_hin_tier(row):
@@ -472,35 +473,38 @@ def combine_and_process_data(injury_data, fatality_data):
         hin['HIN_TIER'] = hin.apply(determine_hin_tier, axis=1)
 
         # Select final columns for the join (drop individual TIER columns)
-        hin = hin[['ROUTENAME', 'HIN_TIER', 'geometry']]
+        hin = hin[['ROUTENAME', 'HIN_TIER', 'GIS_ID', 'geometry']]
 
         logger.info("Performing spatial join with HIN boundaries")
         gdf_hex_anc_smd_hin = gpd.sjoin(gdf_hex_anc_smd, hin, how='left')
 
-        # Group matches per crash point
+        # Group matches per crash point, keeping ROUTENAME, HIN_TIER, GIS_ID aligned
         agg = (
             gdf_hex_anc_smd_hin.groupby('OBJECTID')
-            .agg({
-                'ROUTENAME': lambda x: list(pd.unique(x.dropna())),
-                'HIN_TIER': lambda x: list(pd.unique(x.dropna()))
-            })
-            .reset_index()
+            .apply(lambda df: df[['ROUTENAME', 'HIN_TIER', 'GIS_ID']]
+                   .dropna(subset=['ROUTENAME', 'HIN_TIER', 'GIS_ID'])
+                   .drop_duplicates()
+                   .to_dict('records'))
+            .reset_index(name='matches')
         )
 
-        # Ensure max length = 3 for ROUTENAME, 2 for HIN_TIER
-        max_routes = 3
-        max_tiers = 2
+        # Max number of overlaps you want to keep
+        max_matches = 3  # up to 3 polygons
 
-        for i in range(max_routes):
-            agg[f'ROUTENAME_{chr(65+i)}'] = agg['ROUTENAME'].apply(
-                lambda lst: lst[i] if i < len(lst) else None)
+        # Expand into separate columns
+        for i in range(max_matches):
+            agg[f'ROUTENAME_{chr(65+i)}'] = agg['matches'].apply(
+                lambda lst: lst[i]['ROUTENAME'] if i < len(lst) else None
+            )
+            agg[f'HIN_TIER_{chr(65+i)}'] = agg['matches'].apply(
+                lambda lst: lst[i]['HIN_TIER'] if i < len(lst) else None
+            )
+            agg[f'GIS_ID_{chr(65+i)}'] = agg['matches'].apply(
+                lambda lst: lst[i]['GIS_ID'] if i < len(lst) else None
+            )
 
-        for i in range(max_tiers):
-            agg[f'HIN_TIER_{chr(65+i)}'] = agg['HIN_TIER'].apply(
-                lambda lst: lst[i] if i < len(lst) else None)
-
-        # Drop the list columns if you don't need them
-        agg = agg.drop(columns=['ROUTENAME', 'HIN_TIER'])
+        # Drop the intermediate list column
+        agg = agg.drop(columns=['matches'])
 
         # Merge back to original crash GeoDataFrame
         gdf_hex_anc_smd_hin = gdf_hex_anc_smd.reset_index().merge(
@@ -514,7 +518,8 @@ def combine_and_process_data(injury_data, fatality_data):
         })
 
         # Drop the geometry column to create a plain DataFrame result
-        gdf_hex_anc_smd_hin = gdf_hex_anc_smd_hin.drop(columns=['geometry'])
+        gdf_hex_anc_smd_hin = gdf_hex_anc_smd_hin.drop(
+            columns=['geometry', 'index'])
 
         # Convert back to DataFrame
         crash_hex = pd.DataFrame(gdf_hex_anc_smd_hin)
