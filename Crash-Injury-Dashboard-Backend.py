@@ -273,7 +273,7 @@ def process_fatality_data():
             'actions_planned_completed': 'ActionsPlannedAndCompleted',
             'actions_under_consideration': 'ActionsUnderConsideration',
             'suspected_impaired': 'SuspectedImpaired',
-            'suspected_speeding': 'SuspectedSpeeding'
+            'suspected_speeding': 'SuspectedSpeeding',
             'hit_and_run': 'HitAndRun'
         })
 
@@ -590,3 +590,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+
