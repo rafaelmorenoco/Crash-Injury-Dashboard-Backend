@@ -274,6 +274,7 @@ def process_fatality_data():
             'actions_under_consideration': 'ActionsUnderConsideration',
             'suspected_impaired': 'SuspectedImpaired',
             'suspected_speeding': 'SuspectedSpeeding'
+            'hit_and_run': 'HitAndRun'
         })
 
         # Select columns
@@ -281,7 +282,7 @@ def process_fatality_data():
                        'StrinkingVehicle', 'SecondStrikingVehicleObject', 'SiteVisitStatus',
                        'FactorsDiscussedAtSiteVisit', 'ActionsPlannedAndCompleted',
                        'ActionsUnderConsideration', 'SuspectedImpaired', 'SuspectedSpeeding',
-                       'LATITUDE', 'LONGITUDE']]
+                       'HitAndRun', 'LATITUDE', 'LONGITUDE']]
 
         # Define the mapping dictionary
         mapping_ssvo = {
