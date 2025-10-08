@@ -239,6 +239,12 @@ def process_fatality_data():
 
         # Sort and convert to GeoDataFrame
         df_fs = df_f.sort_values(by='datetime', ascending=False)
+        df_fs['death_case_id'] = df_fs.apply(
+            lambda row: f"D{int(row.death_case):02d}-{int(row.death_case_number):02d}"
+            if pd.notnull(row.death_case) and pd.notnull(row.death_case_number)
+            else None,
+            axis=1
+        )
         gdf_f = gpd.GeoDataFrame(df_fs, geometry='SHAPE', crs=4326)
 
         # Extract coordinates
@@ -261,6 +267,7 @@ def process_fatality_data():
         # Rename columns for consistency
         gdf_f = gdf_f.rename(columns={
             'objectid': 'OBJECTID',
+            'death_case_id': 'DeathCaseID',
             'ccn': 'CCN',
             'datetime': 'REPORTDATE',
             'vehicle_type': 'MODE',
@@ -278,11 +285,10 @@ def process_fatality_data():
         })
 
         # Select columns
-        gdf_f = gdf_f[['OBJECTID', 'CCN', 'MODE', 'SEVERITY', 'REPORTDATE', 'ADDRESS', 'AGE',
-                       'StrinkingVehicle', 'SecondStrikingVehicleObject', 'SiteVisitStatus',
-                       'FactorsDiscussedAtSiteVisit', 'ActionsPlannedAndCompleted',
-                       'ActionsUnderConsideration', 'SuspectedImpaired', 'SuspectedSpeeding',
-                       'HitAndRun', 'LATITUDE', 'LONGITUDE']]
+        gdf_f = gdf_f[['OBJECTID', 'DeathCaseID', 'CCN', 'MODE', 'SEVERITY', 'REPORTDATE', 'ADDRESS',
+                       'AGE', 'StrinkingVehicle', 'SecondStrikingVehicleObject', 'SiteVisitStatus',
+                       'FactorsDiscussedAtSiteVisit', 'ActionsPlannedAndCompleted', 'ActionsUnderConsideration',
+                       'SuspectedImpaired', 'SuspectedSpeeding', 'HitAndRun', 'LATITUDE', 'LONGITUDE']]
 
         # Define the mapping dictionary
         mapping_ssvo = {
@@ -590,4 +596,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-
