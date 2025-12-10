@@ -330,6 +330,9 @@ def process_fatality_data():
             .dt.tz_convert('America/New_York')
         )
 
+        # Set the LAST_RECORD column to the maximum REPORTDATE
+        gdf_f['LAST_RECORD'] = gdf_f['REPORTDATE'].max()
+
         logger.info(f"Processed {len(gdf_f)} fatality records")
         return gdf_f
 
@@ -349,13 +352,15 @@ def combine_and_process_data(injury_data, fatality_data):
         None).astype('datetime64[ns]')
     fatality_data['REPORTDATE'] = fatality_data['REPORTDATE'].dt.tz_localize(
         None).astype('datetime64[ns]')
+    fatality_data['LAST_RECORD'] = fatality_data['LAST_RECORD'].dt.tz_localize(
+        None).astype('datetime64[ns]')
 
     # Merge the dataframes
     combined_df = pd.merge(
         fatality_data, injury_data,
         how='outer',
         on=['OBJECTID', 'CCN', 'MODE', 'SEVERITY', 'REPORTDATE',
-            'AGE', 'LATITUDE', 'LONGITUDE', 'COUNT', 'ADDRESS']
+            'AGE', 'LATITUDE', 'LONGITUDE', 'COUNT', 'ADDRESS', 'LAST_RECORD']
     )
 
     # Get the workflow trigger type from environment variable
