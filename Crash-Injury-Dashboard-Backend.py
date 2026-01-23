@@ -127,11 +127,18 @@ def process_crash_point_data():
     # Convert timestamps to datetime with proper timezone conversion
     df_cp_cd['REPORTDATE'] = (
         pd.to_datetime(df_cp_cd['REPORTDATE'], unit='ms')
-          .dt.tz_localize('UTC')
-          .dt.tz_convert('America/New_York')
+        .dt.tz_localize('UTC')
+        .dt.tz_convert('America/New_York')
     )
 
-    # Set the LAST_RECORD column to the maximum REPORTDATE
+    # Remove future records beyond tomorrow at midnight
+    tomorrow_midnight = (
+        pd.Timestamp.now(tz="America/New_York")
+        .normalize() + pd.Timedelta(days=1)
+    )
+    df_cp_cd = df_cp_cd[df_cp_cd['REPORTDATE'] <= tomorrow_midnight]
+
+    # Now compute LAST_RECORD
     df_cp_cd['LAST_RECORD'] = df_cp_cd['REPORTDATE'].max()
 
     # ------------------ New Logging Block ------------------
@@ -324,13 +331,22 @@ def process_fatality_data():
         gdf_f['AGE'] = gdf_f['AGE'].apply(
             lambda age: 120 if pd.isnull(age) or age < 1 or age > 120 else age)
         gdf_f['COUNT'] = 1
+
+        # Convert timestamps to datetime with proper timezone conversion
         gdf_f['REPORTDATE'] = (
             pd.to_datetime(gdf_f['REPORTDATE'], unit='ms')
             .dt.tz_localize('UTC')
             .dt.tz_convert('America/New_York')
         )
 
-        # Set the LAST_RECORD column to the maximum REPORTDATE
+        # Remove future records beyond tomorrow at midnight
+        tomorrow_midnight = (
+            pd.Timestamp.now(tz="America/New_York")
+            .normalize() + pd.Timedelta(days=1)
+        )
+        gdf_f = gdf_f[gdf_f['REPORTDATE'] <= tomorrow_midnight]
+
+        # Compute LAST_RECORD
         gdf_f['LAST_RECORD'] = gdf_f['REPORTDATE'].max()
 
         logger.info(f"Processed {len(gdf_f)} fatality records")
