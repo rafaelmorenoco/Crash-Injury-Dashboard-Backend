@@ -1,5 +1,6 @@
 # Load the necessary libraries
 import os
+import time
 import logging
 import pandas as pd
 import geopandas as gpd
@@ -41,40 +42,54 @@ def fetch_all_features(url, where="1=1", outFields="*", outSR="4326", f="json"):
     }
 
     all_attributes = []
+    max_retries = 3
 
     logger.info(f"Fetching data from {url}")
 
     while True:
-        try:
-            response = requests.get(url, params=params)
-            response.raise_for_status()  # Raise exception for HTTP errors
-            data = response.json()
+        # Retry loop for each paginated request
+        for attempt in range(1, max_retries + 1):
+            try:
+                response = requests.get(url, params=params)
+                response.raise_for_status()  # Raise exception for HTTP errors
+                data = response.json()
+                break  # Success, exit retry loop
+            except requests.exceptions.RequestException as e:
+                if attempt < max_retries:
+                    wait_time = 30 * attempt  # 30s, 60s, 90s
+                    logger.warning(
+                        f"Attempt {attempt}/{max_retries} failed at offset {params['resultOffset']}: {e}. "
+                        f"Retrying in {wait_time}s..."
+                    )
+                    time.sleep(wait_time)
+                else:
+                    logger.error(
+                        f"All {max_retries} attempts failed at offset {params['resultOffset']}. "
+                        f"Last error: {e}. Returning {len(all_attributes)} features collected so far."
+                    )
+                    return pd.DataFrame(all_attributes)
 
-            features = data.get("features", [])
-            if not features:
-                break  # Exit loop if no more features returned
+        features = data.get("features", [])
+        if not features:
+            break  # Exit loop if no more features returned
 
-            # Extract and append the feature attributes
-            batch_attributes = [feature.get("attributes", {})
-                                for feature in features]
-            all_attributes.extend(batch_attributes)
+        # Extract and append the feature attributes
+        batch_attributes = [feature.get("attributes", {})
+                            for feature in features]
+        all_attributes.extend(batch_attributes)
 
-            # Determine the maximum number of records returned per call, if available
-            max_record_count = data.get("maxRecordCount", len(features))
+        # Determine the maximum number of records returned per call, if available
+        max_record_count = data.get("maxRecordCount", len(features))
 
-            # If fewer features than the max count were returned, we've reached the end of the results
-            if len(features) < max_record_count:
-                break
-
-            # Update the offset for the next call
-            params["resultOffset"] += len(features)
-
-            logger.info(
-                f"Fetched {len(batch_attributes)} features (total: {len(all_attributes)})")
-
-        except requests.exceptions.RequestException as e:
-            logger.error(f"Error fetching data: {e}")
+        # If fewer features than the max count were returned, we've reached the end of the results
+        if len(features) < max_record_count:
             break
+
+        # Update the offset for the next call
+        params["resultOffset"] += len(features)
+
+        logger.info(
+            f"Fetched {len(batch_attributes)} features (total: {len(all_attributes)})")
 
     logger.info(f"Completed fetching {len(all_attributes)} total features")
     return pd.DataFrame(all_attributes)
