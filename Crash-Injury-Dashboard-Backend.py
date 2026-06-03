@@ -17,6 +17,118 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
+# Crash-level "other-injury" columns. No count column exists for
+# "other", so presence is inferred only when an "other" party was injured.
+OTHER_COLS = ['MAJORINJURIESOTHER', 'MINORINJURIESOTHER',
+              'UNKNOWNINJURIESOTHER', 'FATALOTHER']
+
+# Fatality striking-party relabeling. Fixed Object -> None (not a party, so the
+# crash collapses to a single-X). Motorcycle / Scooter are broken out with a *.
+FATAL_PARTY_RELABEL = {
+    'Pedestrian': 'pedestrian',
+    'Motor Vehicle': 'motor vehicle',
+    'Bicycle': 'bicycle',
+    'Motorcycle': 'motorcycle*',                                # fatal-only
+    'Scooter / Personal Mobility Device': 'standing scooter*',  # fatal-only
+    'Unknown': 'unknown',
+    'Fixed Object': None,                                       # not a party
+}
+
+# Canonical ordering for two-party labels: motorized -> vulnerable.
+FATAL_PARTY_RANK = {
+    'motor vehicle': 1,
+    'motorcycle*': 2,
+    'standing scooter*': 3,
+    'bicycle': 4,
+    'pedestrian': 5,
+    'unknown': 6,
+}
+
+
+def _count_label(n, noun):
+    """Label for a single-mode crash, e.g. 'single motor vehicle',
+    'motor vehicle - motor vehicle', 'multiple motor vehicles'."""
+    if n == 1:
+        return f'single {noun}'
+    if n == 2:
+        return f'{noun} - {noun}'
+    return f'multiple {noun}s'          # n > 2
+
+
+def classify_crash_type(row):
+    """Classify an injury crash from crash-level counts.
+
+    Vulnerable road users take priority over vehicle count; vehicle/bicycle
+    counts only matter for single-mode crashes. 3+ distinct modes collapse to
+    'multi-party'. Requires TOTAL_VEHICLES / TOTAL_PEDESTRIANS / TOTAL_BICYCLES
+    and OTHER_COLS to be NaN-filled with 0 beforehand.
+    """
+    veh = int(row['TOTAL_VEHICLES'])
+    bikes = int(row['TOTAL_BICYCLES'])
+    peds = row['TOTAL_PEDESTRIANS'] > 0
+    other = any(row[c] > 0 for c in OTHER_COLS)   # injury-only, no count
+
+    v, b = veh > 0, bikes > 0
+    present = sum([v, other, b, peds])
+
+    if present == 0:
+        return 'unclassified'
+
+    # Single-mode crashes keep a count where the data supports one
+    if present == 1:
+        if v:
+            return _count_label(veh, 'motor vehicle')
+        if b:
+            return _count_label(bikes, 'bicycle')
+        if peds:
+            return 'pedestrian only'
+        if other:
+            return 'other'                # no count column for 'other'
+
+    if present >= 3:
+        return 'multi-party'
+
+    # present == 2: name the pair, ordered motorized -> vulnerable
+    parts = []
+    if v:
+        parts.append('motor vehicle')
+    if other:
+        parts.append('other')
+    if b:
+        parts.append('bicycle')
+    if peds:
+        parts.append('pedestrian')
+    return ' - '.join(parts)
+
+
+def classify_fatal_crash_type(row):
+    """Classify a fatality from StrinkingVehicle + SecondStrikingVehicleObject.
+
+    The two fields are treated as the (up to) two colliding parties; the victim
+    is assumed to be one of them. Fixed Object is dropped (single-X). Unknown is
+    kept as a visible second party in pairs, but all-unknown rows -> unclassified.
+    """
+    parties = []
+    for v in (row.get('StrinkingVehicle'), row.get('SecondStrikingVehicleObject')):
+        if pd.isna(v):
+            continue
+        if v not in FATAL_PARTY_RELABEL:
+            # Surfaces schema drift (a new code the relabel map doesn't know)
+            logger.warning(f"Unmapped party value in fatality data: {v!r}")
+        mapped = FATAL_PARTY_RELABEL.get(v)   # Fixed Object / unmapped -> None
+        if mapped is not None:
+            parties.append(mapped)
+
+    if not parties or all(p == 'unknown' for p in parties):
+        return 'unclassified'
+
+    if len(parties) == 1:
+        p = parties[0]
+        return 'pedestrian only' if p == 'pedestrian' else f'single {p}'
+
+    parties.sort(key=lambda p: FATAL_PARTY_RANK.get(p, 99))
+    return ' - '.join(parties)
+
 
 def fetch_all_features(url, where="1=1", outFields="*", outSR="4326", f="json"):
     """
@@ -120,14 +232,28 @@ def process_crash_point_data():
     # Merge the dataframes on CRIMEID using a right join
     df_cp_cd = pd.merge(df_crashpt, df_crashdetails, on='CRIMEID', how='right')
 
-    # Select and rename columns
+    # Build TYPE_OF_CRASH + involvement flags from the crash-level counts
+    count_cols = ['TOTAL_VEHICLES', 'TOTAL_PEDESTRIANS', 'TOTAL_BICYCLES']
+    df_cp_cd[count_cols + OTHER_COLS] = df_cp_cd[count_cols + OTHER_COLS].fillna(0)
+
+    df_cp_cd['TYPE_OF_CRASH'] = df_cp_cd.apply(classify_crash_type, axis=1)
+    df_cp_cd['INVOLVES_MOTOR_VEHICLE'] = df_cp_cd['TOTAL_VEHICLES'] > 0
+    df_cp_cd['INVOLVES_BICYCLE'] = df_cp_cd['TOTAL_BICYCLES'] > 0
+    df_cp_cd['INVOLVES_PEDESTRIAN'] = df_cp_cd['TOTAL_PEDESTRIANS'] > 0
+    df_cp_cd['INVOLVES_OTHER'] = df_cp_cd[OTHER_COLS].gt(0).any(axis=1)
+
+    # Select and rename columns (raw TOTAL_* / *OTHER columns are intentionally
+    # dropped here; only TYPE_OF_CRASH and the flags are carried forward).
     df_cp_cd = df_cp_cd[['OBJECTID_y', 'CRIMEID', 'CCN_y', 'REPORTDATE',
                          'PERSONID', 'PERSONTYPE', 'AGE', 'FATAL',
                          'MAJORINJURY', 'MINORINJURY', 'VEHICLEID',
                          'INVEHICLETYPE', 'TICKETISSUED', 'LICENSEPLATESTATE',
                          'IMPAIRED', 'SPEEDING', 'ROUTEID', 'STREETSEGID',
                          'ROADWAYSEGID', 'ADDRESS', 'LATITUDE', 'LONGITUDE',
-                         'EVENTID', 'BLOCKKEY', 'SUBBLOCKKEY', 'CORRIDORID']]
+                         'EVENTID', 'BLOCKKEY', 'SUBBLOCKKEY', 'CORRIDORID',
+                         'TYPE_OF_CRASH', 'INVOLVES_MOTOR_VEHICLE',
+                         'INVOLVES_BICYCLE', 'INVOLVES_PEDESTRIAN',
+                         'INVOLVES_OTHER']]
 
     df_cp_cd = df_cp_cd.rename(columns={
         'OBJECTID_y': 'OBJECTID',
@@ -341,6 +467,17 @@ def process_fatality_data():
         gdf_f['StrinkingVehicle'] = gdf_f['StrinkingVehicle'].replace(
             mapping_sv)
 
+        # Build TYPE_OF_CRASH + involvement flags from the two striking-party fields
+        gdf_f['TYPE_OF_CRASH'] = gdf_f.apply(classify_fatal_crash_type, axis=1)
+        gdf_f['INVOLVES_MOTOR_VEHICLE'] = gdf_f['TYPE_OF_CRASH'].str.contains(
+            'motor vehicle', na=False)
+        gdf_f['INVOLVES_BICYCLE'] = gdf_f['TYPE_OF_CRASH'].str.contains(
+            'bicycle', na=False)
+        gdf_f['INVOLVES_PEDESTRIAN'] = gdf_f['TYPE_OF_CRASH'].str.contains(
+            'pedestrian', na=False)
+        gdf_f['INVOLVES_OTHER'] = gdf_f['TYPE_OF_CRASH'].str.contains(
+            r'motorcycle\*|standing scooter\*', na=False, regex=True)
+
         gdf_f['AGE'] = gdf_f['AGE'].astype(float)
         # Modify the AGE column: if AGE is NULL or AGE < 1 or AGE > 120, set it to 120
         gdf_f['AGE'] = gdf_f['AGE'].apply(
@@ -386,12 +523,18 @@ def combine_and_process_data(injury_data, fatality_data):
     fatality_data['LAST_RECORD'] = fatality_data['LAST_RECORD'].dt.tz_localize(
         None).astype('datetime64[ns]')
 
-    # Merge the dataframes
+    # Merge the dataframes.
+    # TYPE_OF_CRASH and the INVOLVES_* flags are added to the join keys so they
+    # remain single columns (injury and fatality rows never match on the full
+    # key set, so each source simply carries its own values; without this they
+    # would be split into _x / _y).
     combined_df = pd.merge(
         fatality_data, injury_data,
         how='outer',
         on=['OBJECTID', 'CCN', 'MODE', 'SEVERITY', 'REPORTDATE',
-            'AGE', 'LATITUDE', 'LONGITUDE', 'COUNT', 'ADDRESS', 'LAST_RECORD']
+            'AGE', 'LATITUDE', 'LONGITUDE', 'COUNT', 'ADDRESS', 'LAST_RECORD',
+            'TYPE_OF_CRASH', 'INVOLVES_MOTOR_VEHICLE', 'INVOLVES_BICYCLE',
+            'INVOLVES_PEDESTRIAN', 'INVOLVES_OTHER']
     )
 
     # Get the workflow trigger type from environment variable
