@@ -6,6 +6,11 @@ on:
     - cron: '0 8 * * *'  # Runs at 08:00 AM UTC, which is 04:00 AM EDT. A manual switch to EST is required which would be 9:00 AM UTC. 
   # Optional: manual trigger
   workflow_dispatch:
+    inputs:
+      commit_timestamp:
+        description: 'Commit last_record_timestamp.txt? (treat this manual run as a real PGH failover)'
+        type: boolean
+        default: false
 
 permissions:
   contents: write
@@ -75,8 +80,11 @@ jobs:
         run: |
           python Crash-Injury-Dashboard-Backend.py
 
-      - name: Commit Timestamp File if Scheduled Run
-        if: github.event_name == 'schedule' && steps.freshness_check.outputs.skip != 'true'
+      - name: Commit Timestamp File
+        if: >-
+          steps.freshness_check.outputs.skip != 'true' &&
+          (github.event_name == 'schedule' ||
+           (github.event_name == 'workflow_dispatch' && inputs.commit_timestamp))
         run: |
           git config --global user.name "GitHub Actions Bot"
           git config --global user.email "actions@github.com"
