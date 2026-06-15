@@ -80,6 +80,13 @@ jobs:
         run: |
           python Crash-Injury-Dashboard-Backend.py
 
+      - name: Upload crashes.parquet to Release
+        if: steps.freshness_check.outputs.skip != 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release upload data-latest crashes.parquet --clobber
+
       - name: Commit Timestamp File
         if: >-
           steps.freshness_check.outputs.skip != 'true' &&
