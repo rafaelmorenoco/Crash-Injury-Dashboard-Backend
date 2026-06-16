@@ -111,13 +111,13 @@ jobs:
         run: |
           git clone -b dev https://x-access-token:${{ secrets.FRONTEND_REPO_PAT }}@github.com/rafaelmorenoco/Crash-Injury-Dashboard-Frontend.git frontend
 
-      - name: Copy crashes.parquet to Frontend Repo
+      - name: Write data marker to Frontend dev and Push
         if: steps.freshness_check.outputs.skip != 'true'
         run: |
-          cp crashes.parquet frontend/
           cd frontend
-          git add crashes.parquet
-          git commit -m "Update crashes.parquet data [skip ci]" || echo "No changes to commit"
+          date -u +"%Y-%m-%dT%H:%M:%SZ" > data-version.txt
+          git add data-version.txt
+          git commit -m "Update data marker [skip ci]" || echo "No changes to commit"
           git push
 
       - name: Trigger Dispatch Event for Frontend Merge
