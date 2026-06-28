@@ -27,7 +27,17 @@ jobs:
 
       - name: Skip if EGH recently synced timestamp
         id: freshness_check
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          COMMIT_TIMESTAMP: ${{ inputs.commit_timestamp }}
         run: |
+          # Manual failover run (box checked) bypasses the freshness check entirely
+          if [ "$EVENT_NAME" = "workflow_dispatch" ] && [ "$COMMIT_TIMESTAMP" = "true" ]; then
+            echo "Manual failover run requested — bypassing freshness check."
+            echo "skip=false" >> $GITHUB_OUTPUT
+            exit 0
+          fi
+
           LAST_COMMIT=$(git log -1 --format=%ct -- last_record_timestamp.txt)
           NOW=$(date +%s)
           if [ -z "$LAST_COMMIT" ]; then
