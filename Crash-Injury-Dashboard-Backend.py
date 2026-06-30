@@ -22,6 +22,10 @@ logger = logging.getLogger(__name__)
 OTHER_COLS = ['MAJORINJURIESOTHER', 'MINORINJURIESOTHER',
               'UNKNOWNINJURIESOTHER', 'FATALOTHER']
 
+# Crash-level impaired-party counts (from the crash point table, layer 24).
+# These are per-crash aggregates, so they repeat across every person row in a crash.
+IMPAIRED_COLS = ['PEDESTRIANSIMPAIRED', 'BICYCLISTSIMPAIRED', 'DRIVERSIMPAIRED']
+
 # Fatality striking-party relabeling. Fixed Object -> None (not a party, so the
 # crash collapses to a single-X). Motorcycle / Scooter are broken out with a *.
 FATAL_PARTY_RELABEL = {
@@ -236,6 +240,9 @@ def process_crash_point_data():
     count_cols = ['TOTAL_VEHICLES', 'TOTAL_PEDESTRIANS', 'TOTAL_BICYCLES']
     df_cp_cd[count_cols + OTHER_COLS] = df_cp_cd[count_cols + OTHER_COLS].fillna(0)
 
+    # Carry crash-level impaired counts through as nullable integers
+    df_cp_cd[IMPAIRED_COLS] = df_cp_cd[IMPAIRED_COLS].fillna(0).astype('Int64')
+
     df_cp_cd['TYPE_OF_CRASH'] = df_cp_cd.apply(classify_crash_type, axis=1)
     df_cp_cd['INVOLVES_MOTOR_VEHICLE'] = df_cp_cd['TOTAL_VEHICLES'] > 0
     df_cp_cd['INVOLVES_BICYCLE'] = df_cp_cd['TOTAL_BICYCLES'] > 0
@@ -251,6 +258,8 @@ def process_crash_point_data():
                          'IMPAIRED', 'SPEEDING', 'ROUTEID', 'STREETSEGID',
                          'ROADWAYSEGID', 'ADDRESS', 'LATITUDE', 'LONGITUDE',
                          'EVENTID', 'BLOCKKEY', 'SUBBLOCKKEY', 'CORRIDORID',
+                         'PEDESTRIANSIMPAIRED', 'BICYCLISTSIMPAIRED',
+                         'DRIVERSIMPAIRED',
                          'TYPE_OF_CRASH', 'INVOLVES_MOTOR_VEHICLE',
                          'INVOLVES_BICYCLE', 'INVOLVES_PEDESTRIAN',
                          'INVOLVES_OTHER']]
