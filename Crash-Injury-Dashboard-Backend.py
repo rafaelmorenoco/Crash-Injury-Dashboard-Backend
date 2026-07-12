@@ -671,40 +671,64 @@ def combine_and_process_data(injury_data, fatality_data):
         hin = hin[['ROUTENAME', 'HIN_TIER', 'GIS_ID', 'geometry']]
 
         logger.info("Performing spatial join with HIN boundaries")
-        gdf_hex_anc_smd_hin = gpd.sjoin(gdf_hex_anc_smd, hin, how='left')
+        # Long-form join: a crash on overlapping corridors yields multiple rows
+        joined = gpd.sjoin(gdf_hex_anc_smd, hin, how='left')
 
-        # Group matches per crash point, keeping ROUTENAME, HIN_TIER, GIS_ID aligned
-        agg = (
-            gdf_hex_anc_smd_hin.groupby('OBJECTID')
-            .apply(lambda df: df[['ROUTENAME', 'HIN_TIER', 'GIS_ID']]
-                   .dropna(subset=['ROUTENAME', 'HIN_TIER', 'GIS_ID'])
-                   .drop_duplicates()
-                   .to_dict('records'))
-            .reset_index(name='matches')
-        )
+        # Keep up to max_matches corridors per crash, expanded into A/B/C columns.
+        # This vectorized rank-and-pivot replaces the per-group apply (much
+        # faster) and produces the identical ROUTENAME_A/B/C, HIN_TIER_A/B/C,
+        # GIS_ID_A/B/C layout, so crashes.parquet keeps the same structure.
+        max_matches = 3
 
-        # Max number of overlaps you want to keep
-        max_matches = 3  # up to 3 polygons
+        m = (joined.dropna(subset=['ROUTENAME', 'HIN_TIER', 'GIS_ID'])
+                   .drop_duplicates(['OBJECTID', 'ROUTENAME', 'HIN_TIER', 'GIS_ID'])
+                   # deterministic A/B/C order: highest tier first, then name
+                   .sort_values(['OBJECTID', 'HIN_TIER', 'ROUTENAME']))
+        m['rk'] = m.groupby('OBJECTID').cumcount()
+        m = m[m['rk'] < max_matches]
 
-        # Expand into separate columns
-        for i in range(max_matches):
-            agg[f'ROUTENAME_{chr(65+i)}'] = agg['matches'].apply(
-                lambda lst: lst[i]['ROUTENAME'] if i < len(lst) else None
-            )
-            agg[f'HIN_TIER_{chr(65+i)}'] = agg['matches'].apply(
-                lambda lst: lst[i]['HIN_TIER'] if i < len(lst) else None
-            )
-            agg[f'GIS_ID_{chr(65+i)}'] = agg['matches'].apply(
-                lambda lst: lst[i]['GIS_ID'] if i < len(lst) else None
-            )
+        hin_wide = m.pivot(index='OBJECTID', columns='rk',
+                           values=['ROUTENAME', 'HIN_TIER', 'GIS_ID'])
+        hin_wide.columns = [f'{field}_{chr(65 + rk)}'
+                            for field, rk in hin_wide.columns]
+        hin_order = [f'{field}_{chr(65 + i)}' for i in range(max_matches)
+                     for field in ['ROUTENAME', 'HIN_TIER', 'GIS_ID']]
+        hin_wide = hin_wide.reindex(columns=hin_order).reset_index()
 
-        # Drop the intermediate list column
-        agg = agg.drop(columns=['matches'])
+        # Merge HIN columns back onto the one-row-per-crash frame
+        gdf_hex_anc_smd_hin = gdf_hex_anc_smd.merge(
+            hin_wide, on='OBJECTID', how='left')
 
-        # Merge back to original crash GeoDataFrame
-        gdf_hex_anc_smd_hin = gdf_hex_anc_smd.reset_index().merge(
-            agg, on='OBJECTID', how='left')
-        # -----------------------------------------
+        # -------- Nearest intersection within 100 ft --------
+        # Assign each crash to its single closest intersection point (the center
+        # of the 100 ft buffer). Point-to-point distance in a feet CRS (EPSG
+        # 2248, NAD83 Maryland ftUS), so 100 means 100 ft per DDOT documentation.
+        # One intersection per crash, no double counting, no overlap columns.
+        # The parquet comes from the monthly dedup refresh; geometry is built
+        # from LATITUDE/LONGITUDE here, the same way crashes are built.
+        intx_path = 'Spatial-Files/Intersection_Points_unique.parquet'
+        logger.info(f"Reading unique intersections from {intx_path}")
+        intx_df = pd.read_parquet(intx_path)
+        intx = gpd.GeoDataFrame(
+            intx_df,
+            geometry=gpd.points_from_xy(
+                intx_df.LONGITUDE, intx_df.LATITUDE, crs=4326)
+        ).to_crs(2248)[['INTERSECTIONKEY', 'canonical_name', 'geometry']]
+
+        logger.info("Assigning nearest intersection within 100 ft")
+        near = gpd.sjoin_nearest(
+            gdf_hex_anc_smd[['OBJECTID', 'geometry']].to_crs(2248),
+            intx, how='left', max_distance=100, distance_col='DIST_TO_INTX_FT')
+        # exact-distance ties can yield >1 row per crash; keep the single closest
+        near = (near.sort_values('DIST_TO_INTX_FT')
+                    .drop_duplicates('OBJECTID')[
+                        ['OBJECTID', 'INTERSECTIONKEY',
+                         'canonical_name', 'DIST_TO_INTX_FT']]
+                    .rename(columns={'canonical_name': 'INTERSECTION_NAME'}))
+
+        gdf_hex_anc_smd_hin = gdf_hex_anc_smd_hin.merge(
+            near, on='OBJECTID', how='left')
+        # --------------------------------------------------
 
         # Rename columns for consistency
         gdf_hex_anc_smd_hin = gdf_hex_anc_smd_hin.rename(columns={
@@ -713,8 +737,7 @@ def combine_and_process_data(injury_data, fatality_data):
         })
 
         # Drop the geometry column to create a plain DataFrame result
-        gdf_hex_anc_smd_hin = gdf_hex_anc_smd_hin.drop(
-            columns=['geometry', 'index'])
+        gdf_hex_anc_smd_hin = gdf_hex_anc_smd_hin.drop(columns=['geometry'])
 
         # Convert back to DataFrame
         crash_hex = pd.DataFrame(gdf_hex_anc_smd_hin)
