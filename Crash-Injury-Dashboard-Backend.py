@@ -24,7 +24,8 @@ OTHER_COLS = ['MAJORINJURIESOTHER', 'MINORINJURIESOTHER',
 
 # Crash-level impaired-party counts (from the crash point table, layer 24).
 # These are per-crash aggregates, so they repeat across every person row in a crash.
-IMPAIRED_COLS = ['PEDESTRIANSIMPAIRED', 'BICYCLISTSIMPAIRED', 'DRIVERSIMPAIRED']
+IMPAIRED_COLS = ['PEDESTRIANSIMPAIRED',
+                 'BICYCLISTSIMPAIRED', 'DRIVERSIMPAIRED']
 
 # Fatality striking-party relabeling. Fixed Object -> None (not a party, so the
 # crash collapses to a single-X). Motorcycle / Scooter are broken out with a *.
@@ -238,7 +239,8 @@ def process_crash_point_data():
 
     # Build TYPE_OF_CRASH + involvement flags from the crash-level counts
     count_cols = ['TOTAL_VEHICLES', 'TOTAL_PEDESTRIANS', 'TOTAL_BICYCLES']
-    df_cp_cd[count_cols + OTHER_COLS] = df_cp_cd[count_cols + OTHER_COLS].fillna(0)
+    df_cp_cd[count_cols + OTHER_COLS] = df_cp_cd[count_cols +
+                                                 OTHER_COLS].fillna(0)
 
     # Carry crash-level impaired counts through as nullable integers
     df_cp_cd[IMPAIRED_COLS] = df_cp_cd[IMPAIRED_COLS].fillna(0).astype('Int64')
@@ -682,7 +684,7 @@ def combine_and_process_data(injury_data, fatality_data):
 
         m = (joined.dropna(subset=['ROUTENAME', 'HIN_TIER', 'GIS_ID'])
                    .drop_duplicates(['OBJECTID', 'ROUTENAME', 'HIN_TIER', 'GIS_ID'])
-                   # deterministic A/B/C order: highest tier first, then name
+             # deterministic A/B/C order: highest tier first, then name
                    .sort_values(['OBJECTID', 'HIN_TIER', 'ROUTENAME']))
         m['rk'] = m.groupby('OBJECTID').cumcount()
         m = m[m['rk'] < max_matches]
@@ -776,6 +778,9 @@ def finalize_data(crash_data):
 
     except Exception as e:
         logger.error(f"Error saving parquet file: {e}")
+        # Re-raise so a failed parquet write fails the job instead of exiting 0
+        # and letting the upload step run against a missing/partial file.
+        raise
 
 
 # Suppress Fiona's warnings
@@ -803,6 +808,10 @@ def main():
 
     except Exception as e:
         logger.error(f"Error in data processing pipeline: {e}")
+        # Re-raise so the "Run Backend Script" step exits non-zero. A failed step
+        # skips the later upload step, so a "no new data" / failed run can never
+        # delete the good crashes.parquet from the release.
+        raise
 
 
 if __name__ == "__main__":
