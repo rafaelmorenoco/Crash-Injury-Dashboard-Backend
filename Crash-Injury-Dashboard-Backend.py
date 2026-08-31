@@ -24,8 +24,7 @@ OTHER_COLS = ['MAJORINJURIESOTHER', 'MINORINJURIESOTHER',
 
 # Crash-level impaired-party counts (from the crash point table, layer 24).
 # These are per-crash aggregates, so they repeat across every person row in a crash.
-IMPAIRED_COLS = ['PEDESTRIANSIMPAIRED',
-                 'BICYCLISTSIMPAIRED', 'DRIVERSIMPAIRED']
+IMPAIRED_COLS = ['PEDESTRIANSIMPAIRED', 'BICYCLISTSIMPAIRED', 'DRIVERSIMPAIRED']
 
 # Fatality striking-party relabeling. Fixed Object -> None (not a party, so the
 # crash collapses to a single-X). Motorcycle / Scooter are broken out with a *.
@@ -234,13 +233,18 @@ def process_crash_point_data():
     df_crashpt = fetch_all_features(crashpt_url)
     df_crashdetails = fetch_all_features(crashdetails_url)
 
+    logger.info(f"crashpt rows={len(df_crashpt)}, details rows={len(df_crashdetails)}")
+    dupe = df_crashpt['CRIMEID'].duplicated().sum()
+    logger.info(f"duplicate CRIMEID in crashpt={dupe}")
+    logger.info(f"null CRIMEID: crashpt={df_crashpt['CRIMEID'].isna().sum()}, "
+                f"details={df_crashdetails['CRIMEID'].isna().sum()}")
+
     # Merge the dataframes on CRIMEID using a right join
     df_cp_cd = pd.merge(df_crashpt, df_crashdetails, on='CRIMEID', how='right')
 
     # Build TYPE_OF_CRASH + involvement flags from the crash-level counts
     count_cols = ['TOTAL_VEHICLES', 'TOTAL_PEDESTRIANS', 'TOTAL_BICYCLES']
-    df_cp_cd[count_cols + OTHER_COLS] = df_cp_cd[count_cols +
-                                                 OTHER_COLS].fillna(0)
+    df_cp_cd[count_cols + OTHER_COLS] = df_cp_cd[count_cols + OTHER_COLS].fillna(0)
 
     # Carry crash-level impaired counts through as nullable integers
     df_cp_cd[IMPAIRED_COLS] = df_cp_cd[IMPAIRED_COLS].fillna(0).astype('Int64')
@@ -684,7 +688,7 @@ def combine_and_process_data(injury_data, fatality_data):
 
         m = (joined.dropna(subset=['ROUTENAME', 'HIN_TIER', 'GIS_ID'])
                    .drop_duplicates(['OBJECTID', 'ROUTENAME', 'HIN_TIER', 'GIS_ID'])
-             # deterministic A/B/C order: highest tier first, then name
+                   # deterministic A/B/C order: highest tier first, then name
                    .sort_values(['OBJECTID', 'HIN_TIER', 'ROUTENAME']))
         m['rk'] = m.groupby('OBJECTID').cumcount()
         m = m[m['rk'] < max_matches]

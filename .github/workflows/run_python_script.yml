@@ -2,8 +2,8 @@ name: Run Python Script
 
 on:
   # Choose when to trigger the workflow
-  schedule:
-    - cron: '0 8 * * *'  # Runs at 08:00 AM UTC, which is 04:00 AM EDT. A manual switch to EST is required which would be 9:00 AM UTC. 
+  #schedule:
+    #- cron: '30 8 * * *'  # Runs at 08:30 AM UTC, which is 04:30 AM EDT. A manual switch to EST is required which would be 9:30 AM UTC. 
   # Optional: manual trigger
   workflow_dispatch:
     inputs:
