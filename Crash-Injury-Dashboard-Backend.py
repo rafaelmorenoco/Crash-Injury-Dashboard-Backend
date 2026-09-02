@@ -24,7 +24,8 @@ OTHER_COLS = ['MAJORINJURIESOTHER', 'MINORINJURIESOTHER',
 
 # Crash-level impaired-party counts (from the crash point table, layer 24).
 # These are per-crash aggregates, so they repeat across every person row in a crash.
-IMPAIRED_COLS = ['PEDESTRIANSIMPAIRED', 'BICYCLISTSIMPAIRED', 'DRIVERSIMPAIRED']
+IMPAIRED_COLS = ['PEDESTRIANSIMPAIRED',
+                 'BICYCLISTSIMPAIRED', 'DRIVERSIMPAIRED']
 
 # Fatality striking-party relabeling. Fixed Object -> None (not a party, so the
 # crash collapses to a single-X). Motorcycle / Scooter are broken out with a *.
@@ -66,11 +67,19 @@ def classify_crash_type(row):
     counts only matter for single-mode crashes. 3+ distinct modes collapse to
     'multi-party'. Requires TOTAL_VEHICLES / TOTAL_PEDESTRIANS / TOTAL_BICYCLES
     and OTHER_COLS to be NaN-filled with 0 beforehand.
+
+    TOTAL_VEHICLES counts all vehicles including bicycles, so motor vehicles
+    are the remainder after removing bikes. It excludes an injured "other"
+    (that party is detected only from OTHER_COLS), so "other" is not
+    subtracted. A negative remainder means a malformed row (more bikes than
+    total vehicles), where "no motor vehicle" is the safe read.
     """
-    veh = int(row['TOTAL_VEHICLES'])
     bikes = int(row['TOTAL_BICYCLES'])
+    # injured other, not in the vehicle total
+    other = any(row[c] > 0 for c in OTHER_COLS)
+
+    veh = max(int(row['TOTAL_VEHICLES']) - bikes, 0)
     peds = row['TOTAL_PEDESTRIANS'] > 0
-    other = any(row[c] > 0 for c in OTHER_COLS)   # injury-only, no count
 
     v, b = veh > 0, bikes > 0
     present = sum([v, other, b, peds])
@@ -92,14 +101,21 @@ def classify_crash_type(row):
     if present >= 3:
         return 'multi-party'
 
-    # present == 2: name the pair, ordered motorized -> vulnerable
+    # present == 2: two motor vehicles plus an 'other' is three parties, not a
+    # pair, so it collapses to multi-party. Vulnerable-user pairs are preserved
+    # regardless of vehicle count.
+    if veh >= 2 and other:
+        return 'multi-party'
+
+    # name the pair, ordered heaviest -> most vulnerable (bicycle before
+    # 'other', since 'other' is mostly standing scooters / PMDs)
     parts = []
     if v:
         parts.append('motor vehicle')
-    if other:
-        parts.append('other')
     if b:
         parts.append('bicycle')
+    if other:
+        parts.append('other')
     if peds:
         parts.append('pedestrian')
     return ' - '.join(parts)
@@ -233,7 +249,8 @@ def process_crash_point_data():
     df_crashpt = fetch_all_features(crashpt_url)
     df_crashdetails = fetch_all_features(crashdetails_url)
 
-    logger.info(f"crashpt rows={len(df_crashpt)}, details rows={len(df_crashdetails)}")
+    logger.info(
+        f"crashpt rows={len(df_crashpt)}, details rows={len(df_crashdetails)}")
     dupe = df_crashpt['CRIMEID'].duplicated().sum()
     logger.info(f"duplicate CRIMEID in crashpt={dupe}")
     logger.info(f"null CRIMEID: crashpt={df_crashpt['CRIMEID'].isna().sum()}, "
@@ -244,13 +261,15 @@ def process_crash_point_data():
 
     # Build TYPE_OF_CRASH + involvement flags from the crash-level counts
     count_cols = ['TOTAL_VEHICLES', 'TOTAL_PEDESTRIANS', 'TOTAL_BICYCLES']
-    df_cp_cd[count_cols + OTHER_COLS] = df_cp_cd[count_cols + OTHER_COLS].fillna(0)
+    df_cp_cd[count_cols + OTHER_COLS] = df_cp_cd[count_cols +
+                                                 OTHER_COLS].fillna(0)
 
     # Carry crash-level impaired counts through as nullable integers
     df_cp_cd[IMPAIRED_COLS] = df_cp_cd[IMPAIRED_COLS].fillna(0).astype('Int64')
 
     df_cp_cd['TYPE_OF_CRASH'] = df_cp_cd.apply(classify_crash_type, axis=1)
-    df_cp_cd['INVOLVES_MOTOR_VEHICLE'] = df_cp_cd['TOTAL_VEHICLES'] > 0
+    df_cp_cd['INVOLVES_MOTOR_VEHICLE'] = (
+        df_cp_cd['TOTAL_VEHICLES'] - df_cp_cd['TOTAL_BICYCLES']) > 0
     df_cp_cd['INVOLVES_BICYCLE'] = df_cp_cd['TOTAL_BICYCLES'] > 0
     df_cp_cd['INVOLVES_PEDESTRIAN'] = df_cp_cd['TOTAL_PEDESTRIANS'] > 0
     df_cp_cd['INVOLVES_OTHER'] = df_cp_cd[OTHER_COLS].gt(0).any(axis=1)
@@ -688,7 +707,7 @@ def combine_and_process_data(injury_data, fatality_data):
 
         m = (joined.dropna(subset=['ROUTENAME', 'HIN_TIER', 'GIS_ID'])
                    .drop_duplicates(['OBJECTID', 'ROUTENAME', 'HIN_TIER', 'GIS_ID'])
-                   # deterministic A/B/C order: highest tier first, then name
+             # deterministic A/B/C order: highest tier first, then name
                    .sort_values(['OBJECTID', 'HIN_TIER', 'ROUTENAME']))
         m['rk'] = m.groupby('OBJECTID').cumcount()
         m = m[m['rk'] < max_matches]
