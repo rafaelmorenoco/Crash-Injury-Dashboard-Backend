@@ -92,7 +92,15 @@ def classify_crash_type(row):
         if v:
             return _count_label(veh, 'motor vehicle')
         if b:
-            return _count_label(bikes, 'bicycle')
+            label = _count_label(bikes, 'bicycle')
+            # Solo-bicycle crashes are very rare (an officer rarely files a
+            # report for a cyclist who fell on their own). A 'single bicycle'
+            # usually means the striking motor vehicle went uncounted in the
+            # crash-level totals. If crash-details lists a driver on this CCN,
+            # treat it as a motor-vehicle-vs-bicycle crash.
+            if label == 'single bicycle' and row.get('HAS_DRIVER'):
+                return 'motor vehicle - bicycle'
+            return label
         if peds:
             return 'pedestrian only'
         if other:
@@ -267,12 +275,33 @@ def process_crash_point_data():
     # Carry crash-level impaired counts through as nullable integers
     df_cp_cd[IMPAIRED_COLS] = df_cp_cd[IMPAIRED_COLS].fillna(0).astype('Int64')
 
+    # Per-crash flag: does crash-details list a motor-vehicle driver on this
+    # CCN? Used to rescue 'single bicycle' rows whose striking vehicle the
+    # crash-level counts missed (see classify_crash_type). Dropped at column
+    # selection below.
+    df_cp_cd['HAS_DRIVER'] = (
+        df_cp_cd['PERSONTYPE'].eq('Driver')
+        .groupby(df_cp_cd['CRIMEID']).transform('any')
+    )
+
     df_cp_cd['TYPE_OF_CRASH'] = df_cp_cd.apply(classify_crash_type, axis=1)
-    df_cp_cd['INVOLVES_MOTOR_VEHICLE'] = (
-        df_cp_cd['TOTAL_VEHICLES'] - df_cp_cd['TOTAL_BICYCLES']) > 0
+
+    # Motor-vehicle involvement: net of bikes from the total, OR the single-
+    # bicycle driver rescue above (same condition, kept in lockstep with the
+    # label so the flag and TYPE_OF_CRASH never disagree).
+    veh_net = df_cp_cd['TOTAL_VEHICLES'] - df_cp_cd['TOTAL_BICYCLES']
+    other_inj = df_cp_cd[OTHER_COLS].gt(0).any(axis=1)
+    single_bike_rescue = (
+        (veh_net <= 0)
+        & (df_cp_cd['TOTAL_BICYCLES'] == 1)
+        & (df_cp_cd['TOTAL_PEDESTRIANS'] == 0)
+        & (~other_inj)
+        & (df_cp_cd['HAS_DRIVER'])
+    )
+    df_cp_cd['INVOLVES_MOTOR_VEHICLE'] = (veh_net > 0) | single_bike_rescue
     df_cp_cd['INVOLVES_BICYCLE'] = df_cp_cd['TOTAL_BICYCLES'] > 0
     df_cp_cd['INVOLVES_PEDESTRIAN'] = df_cp_cd['TOTAL_PEDESTRIANS'] > 0
-    df_cp_cd['INVOLVES_OTHER'] = df_cp_cd[OTHER_COLS].gt(0).any(axis=1)
+    df_cp_cd['INVOLVES_OTHER'] = other_inj
 
     # Select and rename columns (raw TOTAL_* / *OTHER columns are intentionally
     # dropped here; only TYPE_OF_CRASH and the flags are carried forward).
