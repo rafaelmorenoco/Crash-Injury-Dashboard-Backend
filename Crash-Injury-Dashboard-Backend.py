@@ -572,6 +572,97 @@ def process_fatality_data():
         return pd.DataFrame()
 
 
+SEGMENT_MAX_FT = 200   # max distance from a crash to its assigned block segment
+
+
+def assign_police_areas_and_locations(df):
+    """Add police areas, block segment, and a named location to each crash row.
+
+    Expects one row per OBJECTID with LATITUDE, LONGITUDE, COUNT, CCN, and the
+    nearest-intersection columns (INTERSECTIONKEY, INTERSECTION_NAME) already set.
+
+    Adds, per crash:
+      PSA, POLICEDISTRICT         the PSA polygon the crash point falls in (one
+                                  each; nearest PSA if the point is outside all)
+      SEGMENT_ID, SEGMENT_NAME,   nearest block segment within SEGMENT_MAX_FT,
+      DIST_TO_SEG_FT              set for every crash in range, including those
+                                  also assigned to an intersection
+      LOCATION_ID, LOCATION_TYPE, the crash's named place: its intersection if
+      LOCATION_NAME               within 100 ft, otherwise its block segment,
+                                  otherwise null (ramps, lots, off-network)
+      LOCATION_PSA,               the PSA where most of the location's injured
+      LOCATION_DISTRICT           people were hurt (ties: most crashes, then lowest
+                                  PSA number), over the full history, so every
+                                  location sits in exactly one PSA and district
+    """
+    pts = gpd.GeoDataFrame(
+        df[['OBJECTID']].copy(),
+        geometry=gpd.points_from_xy(df.LONGITUDE, df.LATITUDE, crs=4326)
+    ).to_crs(2248)
+
+    # ---- PSA and police district, one per crash ----
+    psa_path = 'Spatial-Files/Police_Service_Areas.geojson'
+    logger.info(f"Reading PSA polygons from {psa_path}")
+    psa = (gpd.read_file(psa_path).to_crs(2248)
+              [['PSA', 'POLICEDISTRICT', 'geometry']])
+    psa['PSA'] = psa['PSA'].astype(str)
+    in_psa = (gpd.sjoin(pts, psa, how='left', predicate='within')
+                 .drop_duplicates('OBJECTID'))
+    missing = in_psa['PSA'].isna()
+    if missing.any():
+        logger.info(f"{int(missing.sum())} crashes outside every PSA; using nearest PSA")
+        fill = (gpd.sjoin_nearest(pts[pts.OBJECTID.isin(in_psa.loc[missing, 'OBJECTID'])],
+                                  psa, how='left')
+                   .drop_duplicates('OBJECTID')
+                   .set_index('OBJECTID')[['PSA', 'POLICEDISTRICT']])
+        in_psa = in_psa.set_index('OBJECTID')
+        in_psa.update(fill)
+        in_psa = in_psa.reset_index()
+    df = df.merge(in_psa[['OBJECTID', 'PSA', 'POLICEDISTRICT']], on='OBJECTID', how='left')
+
+    # ---- nearest block segment within SEGMENT_MAX_FT ----
+    seg_path = 'Spatial-Files/Roadway_Block_Segments.parquet'
+    logger.info(f"Reading block segments from {seg_path}")
+    seg_df = pd.read_parquet(seg_path, columns=['SEGMENT_ID', 'SEGMENT_NAME', 'WKT'])
+    seg = gpd.GeoDataFrame(
+        seg_df[['SEGMENT_ID', 'SEGMENT_NAME']],
+        geometry=gpd.GeoSeries.from_wkt(seg_df['WKT'], crs=4326)
+    ).to_crs(2248)
+    near_seg = (gpd.sjoin_nearest(pts, seg, how='left', max_distance=SEGMENT_MAX_FT,
+                                  distance_col='DIST_TO_SEG_FT')
+                   .sort_values('DIST_TO_SEG_FT')
+                   .drop_duplicates('OBJECTID')
+                   [['OBJECTID', 'SEGMENT_ID', 'SEGMENT_NAME', 'DIST_TO_SEG_FT']])
+    df = df.merge(near_seg, on='OBJECTID', how='left')
+
+    # ---- named location: intersection first, then block segment ----
+    is_intx = df['INTERSECTIONKEY'].notna()
+    is_seg = ~is_intx & df['SEGMENT_ID'].notna()
+    df['LOCATION_ID'] = df['INTERSECTIONKEY'].where(is_intx, df['SEGMENT_ID'].where(is_seg))
+    df['LOCATION_NAME'] = df['INTERSECTION_NAME'].where(is_intx, df['SEGMENT_NAME'].where(is_seg))
+    df['LOCATION_TYPE'] = np.select([is_intx, is_seg], ['Intersection', 'Block'], default=None)
+    people = df['COUNT'].fillna(0)
+    total = people.sum()
+    logger.info(
+        "Location assignment (share of injured people): "
+        f"intersection {people[is_intx].sum() / total:.1%}, "
+        f"block {people[is_seg].sum() / total:.1%}, "
+        f"unassigned {people[~is_intx & ~is_seg].sum() / total:.1%}")
+
+    # ---- one PSA per location: where most of its injured people were hurt ----
+    loc = (df[df['LOCATION_ID'].notna()]
+             .groupby(['LOCATION_ID', 'PSA', 'POLICEDISTRICT'], as_index=False)
+             .agg(people=('COUNT', 'sum'), crashes=('CCN', 'nunique')))
+    loc['psa_num'] = pd.to_numeric(loc['PSA'], errors='coerce')
+    loc = (loc.sort_values(['LOCATION_ID', 'people', 'crashes', 'psa_num'],
+                           ascending=[True, False, False, True])
+              .drop_duplicates('LOCATION_ID')
+              .rename(columns={'PSA': 'LOCATION_PSA', 'POLICEDISTRICT': 'LOCATION_DISTRICT'})
+              [['LOCATION_ID', 'LOCATION_PSA', 'LOCATION_DISTRICT']])
+    df = df.merge(loc, on='LOCATION_ID', how='left')
+    return df
+
+
 def combine_and_process_data(injury_data, fatality_data):
     """Combine injury and fatality data and perform spatial joins"""
     logger.info("Combining and processing data")
@@ -783,6 +874,9 @@ def combine_and_process_data(injury_data, fatality_data):
         gdf_hex_anc_smd_hin = gdf_hex_anc_smd_hin.merge(
             near, on='OBJECTID', how='left')
         # --------------------------------------------------
+
+        # Police district / PSA per crash, block segment, and named location
+        gdf_hex_anc_smd_hin = assign_police_areas_and_locations(gdf_hex_anc_smd_hin)
 
         # Rename columns for consistency
         gdf_hex_anc_smd_hin = gdf_hex_anc_smd_hin.rename(columns={
