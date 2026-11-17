@@ -1,9 +1,11 @@
 """
 Build the roadway block segments used to assign crashes to a named block.
 
-Run by hand when DDOT publishes a new Roadway Block file (not part of the
-scheduled pipeline). Reads the full Roadway_Block.geojson from Open Data DC
-(~46 MB, not committed) and writes two slim files that are committed:
+Runs monthly on the EGH runner (refresh_reference_layers.yml), right after the
+intersection refresh, because the piece names use the nearest intersection.
+Pulls the Roadway Block layer from the DC GIS REST service (or reads a local
+Roadway_Block.geojson when one is passed) and writes two slim files that are
+committed:
 
   Spatial-Files/Roadway_Block_Segments.parquet   used by the backend
       SEGMENT_ID, BLOCKKEY, SEGMENT_NAME, PART, N_PARTS, LENGTH_FT,
@@ -29,15 +31,26 @@ Naming:
 SEGMENT_ID is the BLOCKKEY for a whole block and BLOCKKEY_k for piece k. DDOT
 regenerates BLOCKKEY between releases, so IDs change when this file is rebuilt.
 
+Safety: the script exits with an error, leaving the existing files untouched,
+when the download comes back short of the service's own count, or when the
+number of blocks moves more than MAX_CHANGE from the current file. A real
+re-release of the layer stays well inside that; a failed or partial download
+does not.
+
 Usage:
-  python blocks/prep_block_segments.py path/to/Roadway_Block.geojson
+  python blocks/prep_block_segments.py                      # from the service
+  python blocks/prep_block_segments.py Roadway_Block.geojson  # from a file
 """
 
+import os
 import sys
+import time
 import numpy as np
 import pandas as pd
 import geopandas as gpd
-from shapely.ops import substring
+import requests
+import shapely
+from shapely.ops import linemerge, substring
 
 SPLIT_OVER_FT = 1000      # blocks longer than this get split
 PIECE_TARGET_FT = 500     # target piece length
@@ -46,6 +59,13 @@ CRS_FT = 2248             # NAD83 / Maryland (ftUS), same as the backend
 INTX = "Spatial-Files/Intersection_Points_unique.parquet"
 OUT_PARQUET = "Spatial-Files/Roadway_Block_Segments.parquet"
 OUT_GEOJSON = "Spatial-Files/Roadway_Block_Segments.geojson"
+
+SERVICE_URL = ("https://maps2.dcgis.dc.gov/dcgis/rest/services/DCGIS_DATA/"
+               "Transportation_WebMercator/MapServer/163/query")   # Roadway Block
+FIELDS = ["OBJECTID", "BLOCKKEY", "BLOCK_NAME", "ROUTENAME", "FROMSTREET",
+          "TOSTREET", "DCFUNCTIONALCLASS", "SUMMARYDIRECTION"]
+PAGE_SIZE = 1000          # the server may return fewer per page; we follow it
+MAX_CHANGE = 0.10         # refuse a block count more than 10% off the current file
 
 ROAD_CLASS = {
     11: "Interstate", 12: "Freeway/Expressway", 14: "Principal Arterial",
@@ -84,14 +104,80 @@ def whole_block_name(r):
     return clean(r.ROUTENAME) + from_to(r)
 
 
-def main(src):
+def _get(params, max_retries=3):
+    for attempt in range(1, max_retries + 1):
+        try:
+            r = requests.get(SERVICE_URL, params=params, timeout=120)
+            r.raise_for_status()
+            data = r.json()
+            if "error" in data:            # ArcGIS reports errors with HTTP 200
+                raise requests.exceptions.RequestException(data["error"])
+            return data
+        except (requests.exceptions.RequestException, ValueError) as e:
+            if attempt == max_retries:
+                raise
+            print(f"attempt {attempt} failed ({e}); retrying in {30 * attempt}s")
+            time.sleep(30 * attempt)
+
+
+def fetch_blocks():
+    """Download every Roadway Block feature as GeoJSON, one page at a time."""
+    base = {"where": "1=1", "outSR": 4326}
+    expected = _get({**base, "returnCountOnly": "true", "f": "json"})["count"]
+    feats, offset = [], 0
+    while True:
+        page = _get({**base, "outFields": ",".join(FIELDS), "f": "geojson",
+                     "orderByFields": "OBJECTID", "resultOffset": offset,
+                     "resultRecordCount": PAGE_SIZE})
+        got = page.get("features", [])
+        if not got:
+            break
+        feats.extend(got)
+        offset += len(got)
+        print(f"fetched {len(feats)} of {expected}")
+        more = (page.get("exceededTransferLimit")
+                or page.get("properties", {}).get("exceededTransferLimit"))
+        if not more and len(got) < PAGE_SIZE:
+            break
+    if len(feats) != expected:
+        sys.exit(f"download incomplete: {len(feats)} features, service reports "
+                 f"{expected}; existing files left untouched")
+    return gpd.GeoDataFrame.from_features(feats, crs=4326)
+
+
+def check_count(n_blocks):
+    """Stop if the block count moved too far from the file being replaced."""
+    if not os.path.exists(OUT_PARQUET):
+        return
+    prev = pd.read_parquet(OUT_PARQUET, columns=["BLOCKKEY"]).BLOCKKEY.nunique()
+    change = abs(n_blocks - prev) / prev
+    print(f"blocks: {n_blocks} now, {prev} in the current file ({change:.1%} change)")
+    if change > MAX_CHANGE:
+        sys.exit(f"block count changed {change:.1%} (limit {MAX_CHANGE:.0%}); "
+                 "existing files left untouched")
+
+
+def main(src=None):
     cols = ["BLOCKKEY", "BLOCK_NAME", "ROUTENAME", "FROMSTREET", "TOSTREET",
             "DCFUNCTIONALCLASS", "SUMMARYDIRECTION"]
-    blocks = gpd.read_file(src, columns=cols).to_crs(CRS_FT)
+    raw = fetch_blocks() if src is None else gpd.read_file(src, columns=cols)
+    blocks = raw[cols + ["geometry"]].to_crs(CRS_FT)
     blocks = blocks[blocks.geometry.notna() & ~blocks.geometry.is_empty]
+    # the Open Data file carries a dummy Z = 0 and the service does not; drop it
+    blocks["geometry"] = shapely.force_2d(blocks.geometry.values)
+    # the service can return a block as a MultiLineString; join its parts when
+    # they connect. A block that stays in pieces is kept whole (never split).
+    multi = blocks.geom_type == "MultiLineString"
+    if multi.any():
+        blocks.loc[multi, "geometry"] = blocks.geometry[multi].apply(linemerge)
+        print(f"{int(multi.sum())} multi-part blocks; "
+              f"{int((blocks.geom_type != 'LineString').sum())} stay multi-part (not split)")
+    # fixed order, so the same input always gives the same files
+    blocks = blocks.sort_values("BLOCKKEY", kind="mergesort").reset_index(drop=True)
+    check_count(blocks.BLOCKKEY.nunique())
     blocks["len_ft"] = blocks.geometry.length
     blocks["n_parts"] = np.where(
-        blocks.len_ft > SPLIT_OVER_FT,
+        (blocks.len_ft > SPLIT_OVER_FT) & (blocks.geom_type == "LineString"),
         np.maximum(2, np.round(blocks.len_ft / PIECE_TARGET_FT)), 1).astype(int)
 
     rows = []
@@ -125,7 +211,8 @@ def main(src):
     mids = gpd.GeoDataFrame({"i": seg.index[split]}, geometry=mid[split].values, crs=CRS_FT)
     near = (gpd.sjoin_nearest(mids, intx, how="left", max_distance=NEAR_MAX_FT,
                               distance_col="d")
-              .sort_values("d").drop_duplicates("i").set_index("i")["canonical_name"])
+              .sort_values(["i", "d", "canonical_name"]).drop_duplicates("i")
+              .set_index("i")["canonical_name"])
 
     part = " (PART " + seg.PART.astype(str) + " OF " + seg.N_PARTS.astype(str) + ")"
     near_name = seg.index.to_series().map(near)
@@ -167,6 +254,6 @@ def main(src):
 
 
 if __name__ == "__main__":
-    if len(sys.argv) != 2:
-        sys.exit("usage: python blocks/prep_block_segments.py path/to/Roadway_Block.geojson")
-    main(sys.argv[1])
+    if len(sys.argv) > 2:
+        sys.exit("usage: python blocks/prep_block_segments.py [path/to/Roadway_Block.geojson]")
+    main(sys.argv[1] if len(sys.argv) == 2 else None)
