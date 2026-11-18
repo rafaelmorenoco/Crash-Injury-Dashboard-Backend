@@ -723,6 +723,61 @@ def flag_magnets(df):
     return df
 
 
+CROSSING_SITES = 'Spatial-Files/Crossing_Sites.parquet'
+CROSSING_MAX_FT = 100   # midblock crossings: crash within 100 ft of the site
+
+
+def assign_crossing_sites(df):
+    """Tag each crash with the uncontrolled pedestrian crossing site it belongs to.
+
+    Sites come from crossings/build_crossing_sites.py (monthly). A crash at an
+    intersection (INTERSECTIONKEY set, within 100 ft) belongs to that
+    intersection's site when it is one; a crash at no intersection belongs to
+    the nearest midblock site within CROSSING_MAX_FT. Everything else is null.
+
+    Adds CROSSING_SITE_ID. Never raises: if the sites file is missing or the
+    step fails, the column is null and the rest of the run goes on.
+    """
+    df['CROSSING_SITE_ID'] = None
+    try:
+        if not os.path.exists(CROSSING_SITES):
+            logger.warning(f"{CROSSING_SITES} not found; CROSSING_SITE_ID left empty")
+            return df
+        sites = pd.read_parquet(CROSSING_SITES,
+                                columns=['SITE_ID', 'SITE_TYPE', 'LATITUDE', 'LONGITUDE'])
+        at_intx = df['INTERSECTIONKEY'].isin(
+            set(sites.loc[sites['SITE_TYPE'] == 'Intersection', 'SITE_ID']))
+        df.loc[at_intx, 'CROSSING_SITE_ID'] = df.loc[at_intx, 'INTERSECTIONKEY']
+
+        mid = sites[sites['SITE_TYPE'] == 'Midblock']
+        free = df['INTERSECTIONKEY'].isna() & df['LATITUDE'].notna()
+        if len(mid) and free.any():
+            mid = gpd.GeoDataFrame(
+                mid[['SITE_ID']],
+                geometry=gpd.points_from_xy(mid.LONGITUDE, mid.LATITUDE, crs=4326)).to_crs(2248)
+            pts = gpd.GeoDataFrame(
+                df.loc[free, ['OBJECTID']],
+                geometry=gpd.points_from_xy(df.loc[free, 'LONGITUDE'],
+                                            df.loc[free, 'LATITUDE'], crs=4326)).to_crs(2248)
+            near = (gpd.sjoin_nearest(pts, mid, how='inner', max_distance=CROSSING_MAX_FT,
+                                      distance_col='_d')
+                       .sort_values(['OBJECTID', '_d', 'SITE_ID'])
+                       .drop_duplicates('OBJECTID')
+                       .set_index('OBJECTID')['SITE_ID'])
+            hit = free & df['OBJECTID'].isin(near.index)
+            df.loc[hit, 'CROSSING_SITE_ID'] = df.loc[hit, 'OBJECTID'].map(near)
+
+        tagged = df['CROSSING_SITE_ID'].notna()
+        peds = df['MODE'].eq('Pedestrian')
+        logger.info(
+            f"Crossing sites: {int(tagged.sum())} crash rows tagged; "
+            f"{int((tagged & peds).sum())} of {int(peds.sum())} pedestrian rows")
+    except Exception as e:
+        logger.error(f"Crossing site assignment failed, column left empty: {e}")
+        df['CROSSING_SITE_ID'] = None
+    return df
+
+
 def combine_and_process_data(injury_data, fatality_data):
     """Combine injury and fatality data and perform spatial joins"""
     logger.info("Combining and processing data")
@@ -937,6 +992,9 @@ def combine_and_process_data(injury_data, fatality_data):
 
         # Police district / PSA per crash, block segment, and named location
         gdf_hex_anc_smd_hin = assign_police_areas_and_locations(gdf_hex_anc_smd_hin)
+
+        # Uncontrolled pedestrian crossing site (step-out enforcement page)
+        gdf_hex_anc_smd_hin = assign_crossing_sites(gdf_hex_anc_smd_hin)
 
         # Rename columns for consistency
         gdf_hex_anc_smd_hin = gdf_hex_anc_smd_hin.rename(columns={
